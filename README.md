@@ -1,5 +1,7 @@
 # 🇵🇭 Likha CLI (`likha-cli`)
 
+new repo https://github.com/Neural-Node-Labs/likha-cli rebrand to likha-cli
+
 > **Formerly known as XCoder** — Rebranded to reflect a proud Filipino identity and a mission to empower developers with AI-driven coding assistance.
 
 [![GitHub Repository](https://img.shields.io/badge/GitHub-Neural--Node--Labs%2Flikha--cli-blue?logo=github)](https://github.com/Neural-Node-Labs/likha-cli)
