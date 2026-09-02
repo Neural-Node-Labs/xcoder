@@ -1,0 +1,11 @@
+node_modules/
+dist/
+.env
+.env.local
+*.log
+.agent/
+workspace-agent/
+ui/node_modules/
+ui/dist/
+.DS_Store
+secrets/

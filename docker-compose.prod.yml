@@ -1,0 +1,71 @@
+# Production hardening overlay.
+#
+# Use together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+#
+# Adds:
+#   - Docker secrets (file-based) for DATABASE_PASSWORD and LLM API keys,
+#     instead of passing them as plain environment variables.
+#   - CPU/memory reservations per service (the base file already sets limits).
+#
+# Before using this, create the secret files referenced below, e.g.:
+#   mkdir -p secrets
+#   echo -n "your-db-password"        > secrets/db_password.txt
+#   echo -n "sk-ant-..."              > secrets/anthropic_api_key.txt
+#   chmod 600 secrets/*.txt
+#
+# Docker mounts each secret as a file at /run/secrets/<name> inside the
+# container. devnull's docker-entrypoint.sh resolves an allowlisted set of
+# `${VAR}_FILE` env vars into `${VAR}` before starting the app (see the
+# DEVNULL_SECRET_VARS list in docker-entrypoint.sh), which is why the api
+# service below sets `DATABASE_PASSWORD_FILE` (etc.) rather than
+# `DATABASE_PASSWORD` directly — the plaintext secret never appears in
+# `docker inspect`, shell history, or process environment listings on the
+# host, only inside the container's own filesystem.
+
+secrets:
+  db_password:
+    file: ./secrets/db_password.txt
+  anthropic_api_key:
+    file: ./secrets/anthropic_api_key.txt
+  openai_api_key:
+    file: ./secrets/openai_api_key.txt
+
+services:
+  postgres:
+    environment:
+      POSTGRES_USER: ${DATABASE_USER:-devnull}
+      POSTGRES_PASSWORD_FILE: /run/secrets/db_password
+      POSTGRES_DB: ${DATABASE_NAME:-devnull}
+    secrets:
+      - db_password
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.25"
+          memory: 128M
+
+  api:
+    environment:
+      DATABASE_PASSWORD: ""
+      DATABASE_PASSWORD_FILE: /run/secrets/db_password
+      ANTHROPIC_API_KEY: ""
+      ANTHROPIC_API_KEY_FILE: /run/secrets/anthropic_api_key
+      OPENAI_API_KEY: ""
+      OPENAI_API_KEY_FILE: /run/secrets/openai_api_key
+    secrets:
+      - db_password
+      - anthropic_api_key
+      - openai_api_key
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.5"
+          memory: 256M
+
+  ui:
+    deploy:
+      resources:
+        reservations:
+          cpus: "0.1"
+          memory: 32M

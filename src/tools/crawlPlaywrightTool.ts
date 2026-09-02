@@ -1,0 +1,169 @@
+import * as cheerio from "cheerio";
+import { writeFile } from "./writeEditTool.js";
+
+export interface CrawlSummary {
+  url: string;
+  title: string;
+  links: number;
+  buttons: number;
+  forms: number;
+  inputs: number;
+  outputFile: string;
+}
+
+interface FormFieldInfo {
+  name: string;
+  type: string;
+}
+
+interface FormInfo {
+  action: string;
+  method: string;
+  fields: FormFieldInfo[];
+}
+
+/**
+ * Fetches a URL, extracts interactive elements (links, buttons, forms/inputs), and generates
+ * a Playwright test skeleton (@playwright/test) that navigates to the page, asserts the title,
+ * and stubs out a test per discovered interactive element for the user to fill in/adjust.
+ */
+export async function crawlAndGeneratePlaywrightTest(url: string, outputPath: string, cwd: string = process.cwd()): Promise<CrawlSummary> {
+  const res = await fetch(url, {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (compatible; devnull-crawler/1.0; +https://github.com/neural-node-labs/devnull)",
+      Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    },
+  });
+
+  if (!res.ok) {
+    throw new Error(`Failed to fetch ${url}: HTTP ${res.status} ${res.statusText}`);
+  }
+
+  // Guard against non-HTML responses (e.g. JSON API endpoints, binary files)
+  const contentType = res.headers.get("content-type") ?? "";
+  if (!contentType.includes("text/html") && !contentType.includes("application/xhtml")) {
+    throw new Error(
+      `URL ${url} returned unexpected Content-Type "${contentType}" — expected HTML. ` +
+      `Only HTML pages can be crawled for interactive elements.`
+    );
+  }
+
+  const html = await res.text();
+  const $ = cheerio.load(html);
+
+  const title = $("title").first().text().trim() || "(no title)";
+
+  const links = $("a[href]")
+    .map((_, el) => ({ text: $(el).text().trim().slice(0, 60), href: $(el).attr("href") ?? "" }))
+    .get()
+    .filter((l) => l.text)
+    .slice(0, 25);
+
+  const buttons = $("button, [role=button], input[type=submit], input[type=button]")
+    .map((_, el) => $(el).text().trim() || $(el).attr("value") || $(el).attr("aria-label") || "")
+    .get()
+    .filter(Boolean)
+    .slice(0, 25);
+
+  const forms: FormInfo[] = $("form")
+    .map((_, formEl) => {
+      const $form = $(formEl);
+      const fields = $form
+        .find("input, textarea, select")
+        .map((_, fieldEl) => ({
+          name: $(fieldEl).attr("name") ?? $(fieldEl).attr("id") ?? "",
+          type: $(fieldEl).attr("type") ?? fieldEl.tagName,
+        }))
+        .get()
+        .filter((f) => f.name);
+      return { action: $form.attr("action") ?? "", method: ($form.attr("method") ?? "get").toUpperCase(), fields };
+    })
+    .get();
+
+  const inputsCount = forms.reduce((acc, f) => acc + f.fields.length, 0);
+
+  const script = generateSpec(url, title, links, buttons, forms);
+  const written = writeFile(outputPath, script, cwd);
+
+  return {
+    url,
+    title,
+    links: links.length,
+    buttons: buttons.length,
+    forms: forms.length,
+    inputs: inputsCount,
+    outputFile: written.file,
+  };
+}
+
+function dedupeByLabel(labels: string[]): { label: string; nth?: number }[] {
+  const seen = new Map<string, number>();
+  return labels.map((label) => {
+    const count = seen.get(label) ?? 0;
+    seen.set(label, count + 1);
+    return count === 0 ? { label } : { label, nth: count };
+  });
+}
+
+function generateSpec(
+  url: string,
+  title: string,
+  links: { text: string; href: string }[],
+  buttons: string[],
+  forms: FormInfo[]
+): string {
+  const escaped = (s: string) => s.replace(/'/g, "\\'");
+
+  const linkTests = dedupeByLabel(links.slice(0, 10).map((l) => l.text))
+    .map(
+      ({ label, nth }) =>
+        `  test('link "${escaped(label)}"${nth ? ` [${nth}]` : ""} is visible', async ({ page }) => {\n` +
+        `    await expect(page.getByRole('link', { name: '${escaped(label)}' }).nth(${nth ?? 0})).toBeVisible();\n` +
+        `  });`
+    )
+    .join("\n\n");
+
+  const buttonTests = dedupeByLabel(buttons.slice(0, 10))
+    .map(
+      ({ label, nth }) =>
+        `  test('button "${escaped(label)}"${nth ? ` [${nth}]` : ""} is visible', async ({ page }) => {\n` +
+        `    await expect(page.getByRole('button', { name: '${escaped(label)}' }).nth(${nth ?? 0})).toBeVisible();\n` +
+        `  });`
+    )
+    .join("\n\n");
+
+  const formTests = forms
+    .map((f, i) => {
+      const fills = f.fields
+        .map((field) => `    // await page.fill('[name="${field.name}"]', 'TODO: value for ${field.type} field');`)
+        .join("\n");
+      return (
+        `  test('form #${i + 1} (${f.method} ${f.action || "(same page)"}) can be filled', async ({ page }) => {\n` +
+        `    // TODO: fill in real values, then submit\n${fills}\n` +
+        `    // await page.click('button[type="submit"]');\n  });`
+      );
+    })
+    .join("\n\n");
+
+  return `import { test, expect } from '@playwright/test';
+
+// Auto-generated by devnull's crawl_and_generate_playwright_test_tool from:
+//   ${url}
+// Review and fill in TODOs before relying on this in CI.
+
+test.describe('${escaped(title)}', () => {
+  test('page loads and has expected title', async ({ page }) => {
+    await page.goto('${url}');
+    await expect(page).toHaveTitle(/${escaped(title).split(" ")[0] || ".*"}/);
+  });
+
+${linkTests || "  // No links discovered"}
+
+${buttonTests || "  // No buttons discovered"}
+
+${formTests || "  // No forms discovered"}
+});
+`;
+}
+
+

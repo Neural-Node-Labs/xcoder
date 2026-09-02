@@ -1,0 +1,12 @@
+node_modules
+dist
+ui
+.git
+.env
+secrets
+*.log
+.agent
+npm-debug.log*
+Dockerfile
+docker-compose.yml
+.dockerignore
