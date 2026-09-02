@@ -91,7 +91,7 @@ export function Dashboard() {
           <div className="card-title">New task</div>
 
           <div className="field">
-            <label>What should devnull do?</label>
+            <label>What should xcoder do?</label>
             <textarea
               value={task}
               onChange={(e) => setTask(e.target.value)}

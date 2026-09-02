@@ -37,7 +37,7 @@ export function LoginPage() {
         <div className="row" style={{ marginBottom: 20 }}>
           <div className="brand-mark">⌗</div>
           <div>
-            <div className="brand-text">devnull</div>
+            <div className="brand-text">xcoder</div>
             <div className="brand-sub">SDLC Orchestration Platform</div>
           </div>
         </div>

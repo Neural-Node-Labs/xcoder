@@ -16,7 +16,7 @@ const TITLES: Record<Page, { title: string; sub: string }> = {
   wbs: { title: "DAG / WBS board", sub: "Track stage-by-stage progress and phase reports" },
   history: { title: "Task history", sub: "Completed top-level runs" },
   skills: { title: "Skills", sub: "Hot-pluggable role skills available to every engine" },
-  projects: { title: "Projects", sub: "Workspaces devnull can run tasks against" },
+  projects: { title: "Projects", sub: "Workspaces xcoder can run tasks against" },
   logs: { title: "Live logs", sub: "Thought / action / observation, as it happens" },
   users: { title: "Users", sub: "Manage platform accounts" },
   settings: { title: "Settings", sub: "LLM key and platform status" },

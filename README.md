@@ -1,4 +1,4 @@
-# devnull
+# xcoder
 
 **A DAG-based SDLC orchestration platform.** devnull breaks a task into an inspectable
 pipeline of software-development stages, runs each stage in its own isolated sub-agent, and

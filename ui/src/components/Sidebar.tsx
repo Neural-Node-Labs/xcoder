@@ -36,7 +36,7 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
       <div className="brand">
         <div className="brand-mark">⌗</div>
         <div>
-          <div className="brand-text">devnull</div>
+          <div className="brand-text">xcoder</div>
           <div className="brand-sub">SDLC Platform</div>
         </div>
       </div>

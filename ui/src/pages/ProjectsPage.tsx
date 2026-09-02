@@ -48,7 +48,7 @@ export function ProjectsPage() {
       <div className="card">
         <div className="card-title">Add a project</div>
         <p className="text-2" style={{ marginTop: 0, marginBottom: 16, fontSize: 12 }}>
-          Give it a name — devnull creates and manages the workspace folder for you, under your
+          Give it a name — xcoder creates and manages the workspace folder for you, under your
           own private workspace root. Projects are fully isolated per user: another user can use
           the exact same project name with no conflict, and can never see, edit, or run tasks
           against yours.
