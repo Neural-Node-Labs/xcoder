@@ -15,9 +15,9 @@
 #   chmod 600 secrets/*.txt
 #
 # Docker mounts each secret as a file at /run/secrets/<name> inside the
-# container. devnull's docker-entrypoint.sh resolves an allowlisted set of
+# container. xcoder's docker-entrypoint.sh resolves an allowlisted set of
 # `${VAR}_FILE` env vars into `${VAR}` before starting the app (see the
-# DEVNULL_SECRET_VARS list in docker-entrypoint.sh), which is why the api
+# XCODER_SECRET_VARS list in docker-entrypoint.sh), which is why the api
 # service below sets `DATABASE_PASSWORD_FILE` (etc.) rather than
 # `DATABASE_PASSWORD` directly — the plaintext secret never appears in
 # `docker inspect`, shell history, or process environment listings on the
@@ -34,9 +34,9 @@ secrets:
 services:
   postgres:
     environment:
-      POSTGRES_USER: ${DATABASE_USER:-devnull}
+      POSTGRES_USER: ${DATABASE_USER:-xcoder}
       POSTGRES_PASSWORD_FILE: /run/secrets/db_password
-      POSTGRES_DB: ${DATABASE_NAME:-devnull}
+      POSTGRES_DB: ${DATABASE_NAME:-xcoder}
     secrets:
       - db_password
     deploy:

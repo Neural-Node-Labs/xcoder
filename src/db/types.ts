@@ -1,6 +1,6 @@
 /**
  * Supported database backend.
- * PostgreSQL is the only backend devnull supports.
+ * PostgreSQL is the only backend xcoder supports.
  */
 export type DatabaseType = "postgres";
 

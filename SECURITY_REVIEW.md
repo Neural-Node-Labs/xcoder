@@ -1,4 +1,4 @@
-# devnull — Pre-SaaS-launch security review
+# xcoder — Pre-SaaS-launch security review
 
 Scope: multi-tenant safety (many subscribed users, isolation between their workspaces and
 running agents) and general production-deployment hardening. This document records what was
@@ -45,7 +45,7 @@ with no recovery path. For a subscription SaaS this is a data-loss/availability 
 own, independent of any attacker.
 
 **Fix**: `src/api/userStorePersistence.ts` persists the same array to a local JSON file
-(`~/.devnull/users.json`, mode `0600` since it contains password hashes) on every mutation, and
+(`~/.xcoder/users.json`, mode `0600` since it contains password hashes) on every mutation, and
 loads it on startup with the id counter correctly resumed from the highest existing id.
 **Caveat, stated plainly**: this is single-instance-only. A real production deployment behind
 a load balancer runs more than one app process; a local file is invisible across instances. The
@@ -72,14 +72,14 @@ check, no per-request validation, nothing at the application layer closes this c
 tool whose entire purpose is running an arbitrary command.
 
 **What was fixed**: two things, both real but both mitigations, not a complete fix:
-- `src/api/server.ts` now defaults `DEVNULL_RESTRICT_TO_WORKSPACE=true` specifically for the
+- `src/api/server.ts` now defaults `XCODER_RESTRICT_TO_WORKSPACE=true` specifically for the
   API server process (the multi-tenant-facing surface), confining `read_tool`/`write_edit_tool`
   to the resolved project directory unless the operator explicitly overrides it. The CLI's
   default is unchanged (single-user, local invocation — a different risk profile).
 - `src/tools/toolDispatcher.ts` — the single choke point every engine's tool calls pass through
   regardless of which tool schema list they were given — now enforces two kill switches:
-  `DEVNULL_DISABLE_SHELL_TOOLS` (blocks `run_command_tool` and every `ssh_*`/`docker_*` tool)
-  and `DEVNULL_DISABLE_NETWORK_TOOLS` (blocks `playwright_run_tool`,
+  `XCODER_DISABLE_SHELL_TOOLS` (blocks `run_command_tool` and every `ssh_*`/`docker_*` tool)
+  and `XCODER_DISABLE_NETWORK_TOOLS` (blocks `playwright_run_tool`,
   `crawl_and_generate_playwright_test_tool`, `crawl_site_mapper_tool`, `summarize_url_tool`,
   `api_test_tool`, `github_tool`). Enforced at dispatch, not just by hiding the tool from the
   LLM's schema list, so it holds even if some future code path hands a custom tool list to a
@@ -93,8 +93,8 @@ are going to be offered to untrusted multi-tenant users (which is most of the po
 agentic coding platform), the only complete answer is running each task's tool execution in a
 real isolation boundary — a container or microVM per task/tenant (gVisor, Firecracker, or
 equivalent), a filesystem that only that tenant's container can see, and restricted/no shared
-network egress. Until that's in place, treat `DEVNULL_DISABLE_SHELL_TOOLS=true` and
-`DEVNULL_DISABLE_NETWORK_TOOLS=true` as the honest production default, accepting a
+network egress. Until that's in place, treat `XCODER_DISABLE_SHELL_TOOLS=true` and
+`XCODER_DISABLE_NETWORK_TOOLS=true` as the honest production default, accepting a
 less-capable (but safe) agent, rather than deploying a shell-capable agent on shared
 infrastructure with no isolation. This is the single most important decision to make before
 launch.
@@ -105,7 +105,7 @@ Once issued, a Bearer token was valid forever, with no server-side way to force 
 only an explicit logout (`revokeToken`) removed it. A token leaked once (a logged request, a
 compromised device, a future XSS bug in the dashboard) stayed valid indefinitely.
 
-**Fix**: tokens now carry `expiresAt` (default 7-day TTL, `DEVNULL_TOKEN_TTL_MS` to override),
+**Fix**: tokens now carry `expiresAt` (default 7-day TTL, `XCODER_TOKEN_TTL_MS` to override),
 enforced in `validateToken()` and `authMiddleware`, with both lazy eviction on access and a
 periodic sweep. **Verified**: 3 tests in `auth.test.ts` confirm a fresh token validates, an
 expired token is rejected by both `validateToken` and `authMiddleware` directly (403, not
@@ -119,8 +119,8 @@ multiple tenants sharing server capacity, this is a direct noisy-neighbor and co
 vector: one tenant hammering task submission degrades or costs money for every other tenant.
 
 **Fix**: `checkTaskRateLimit(userId)` in `auth.ts` (default: 30 task submissions/hour/user,
-independently tunable from the login limiter via `DEVNULL_TASK_RATE_MAX`/
-`DEVNULL_TASK_RATE_WINDOW_MS`), wired into both `/chat` and `/chat/plan`, returning 429 with a
+independently tunable from the login limiter via `XCODER_TASK_RATE_MAX`/
+`XCODER_TASK_RATE_WINDOW_MS`), wired into both `/chat` and `/chat/plan`, returning 429 with a
 `retryAfterMs`. **Verified**: 4 tests confirm the limit is enforced, one user's limit doesn't
 affect another user's counter, and the login and task limiters don't interfere with each other
 — this last check caught a real bug I introduced while building this (see below).
@@ -140,7 +140,7 @@ one; the read-path check in `checkRateLimitWithConfig` was always correctly scop
 Bearer-token auth (not cookies) limits the worst-case impact versus cookie-based sessions, but
 a wildcard is still inappropriate for a production API.
 
-**Fix**: `DEVNULL_CORS_ORIGIN` (comma-separated allowlist); with nothing configured, the
+**Fix**: `XCODER_CORS_ORIGIN` (comma-separated allowlist); with nothing configured, the
 default is now same-origin-only rather than wildcard.
 
 ---
@@ -171,7 +171,7 @@ Listed by priority, with why each matters and roughly what it would take.
    projects and task history; this is "more of the same," not new architecture.
 2. **Decide the tool-sandboxing story before enabling shell/network tools for untrusted users**
    (item 3 above). Either invest in per-tenant container/microVM isolation, or ship with
-   `DEVNULL_DISABLE_SHELL_TOOLS`/`DEVNULL_DISABLE_NETWORK_TOOLS` on by default and clearly
+   `XCODER_DISABLE_SHELL_TOOLS`/`XCODER_DISABLE_NETWORK_TOOLS` on by default and clearly
    communicate the capability trade-off to users.
 3. **Move the token store off in-memory too**, for the same horizontal-scaling reason as the
    user store — a Redis-backed or DB-backed session store so any instance can validate any

@@ -34,7 +34,7 @@ async function main() {
   // ─── 1. Log Rotation (FileTelemetry) ────────────────────────────────────
   console.log("\n--- Log Rotation ---");
   {
-    const tmpDir = `/tmp/devnull-test-${Date.now()}`;
+    const tmpDir = `/tmp/xcoder-test-${Date.now()}`;
     const fs = await import("node:fs");
     const path = await import("node:path");
     fs.mkdirSync(tmpDir, { recursive: true });

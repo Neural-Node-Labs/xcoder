@@ -1,7 +1,7 @@
 /**
  * API server test suite.
  *
- * Tests the devnull HTTP API endpoints with authentication.
+ * Tests the xcoder HTTP API endpoints with authentication.
  * Runs against a real Express server on a fixed port.
  *
  * Usage:

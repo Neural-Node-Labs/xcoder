@@ -7,7 +7,7 @@ import { resolveLogsDir } from "../config/paths.js";
  * Default na implementasyon ng telemetry: flat na mga log file sa ilalim ng .agent/logs/.
  * (DATI ay nasa top-level na .log/ ito, hiwalay sa .agent/ — pinagsama-sama na ngayon ang
  * lahat ng system-generated na file sa ilalim ng .agent/ lamang; tingnan ang src/config/paths.ts.)
- * Nasasapatan nito ang TelemetryInterface stub para gumana ang devnull nang walang
+ * Nasasapatan nito ang TelemetryInterface stub para gumana ang xcoder nang walang
  * anumang config. Palitan ito (PostgresTelemetry) sa pamamagitan ng pag-implement ng
  * TelemetryInterface at pag-wire nito sa core/orchestrator sa halip na FileTelemetry.
  *

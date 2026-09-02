@@ -11,3 +11,4 @@ ui/dist/
 secrets/
 /.idea/
 /ollama_models/
+/.idea/

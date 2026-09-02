@@ -12,13 +12,13 @@ const DEFAULT_PORT = 3001;
 const DEFAULT_HOST = "0.0.0.0";
 
 /**
- * Start the devnull HTTP API server.
+ * Start the xcoder HTTP API server.
  *
  * Returns the server instance so the caller can close it (e.g. for testing or graceful shutdown).
  */
 export function startApiServer(opts: ApiServerOptions = {}): import("http").Server {
-  const port = parseInt(process.env.DEVNULL_API_PORT ?? String(opts.port ?? DEFAULT_PORT), 10);
-  const host = process.env.DEVNULL_API_HOST ?? opts.host ?? DEFAULT_HOST;
+  const port = parseInt(process.env.XCODER_API_PORT ?? String(opts.port ?? DEFAULT_PORT), 10);
+  const host = process.env.XCODER_API_HOST ?? opts.host ?? DEFAULT_HOST;
 
   // SECURITY: workspace confinement (src/tools/workspaceConfinement.ts) defaults to OFF
   // platform-wide, since the CLI's typical single-user, single-invocation use case often has
@@ -29,8 +29,8 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
   // reach another tenant's project directory. Default it ON specifically here unless the
   // operator has explicitly set the env var themselves (including explicitly opting back out
   // with "false") — this only changes the default for API-server processes, not the CLI.
-  if (process.env.DEVNULL_RESTRICT_TO_WORKSPACE === undefined) {
-    process.env.DEVNULL_RESTRICT_TO_WORKSPACE = "true";
+  if (process.env.XCODER_RESTRICT_TO_WORKSPACE === undefined) {
+    process.env.XCODER_RESTRICT_TO_WORKSPACE = "true";
   }
 
   const app = express();
@@ -42,11 +42,11 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
   // this API from a browser. Bearer-token auth (not cookies) limits the worst-case impact
   // (a malicious page still can't silently reuse a signed-in user's session the way it could
   // with cookie auth), but a wildcard origin still lets any site probe the API's behavior and
-  // is not appropriate for a production SaaS. Set DEVNULL_CORS_ORIGIN to a comma-separated
+  // is not appropriate for a production SaaS. Set XCODER_CORS_ORIGIN to a comma-separated
   // allowlist (e.g. "https://app.example.com,https://staging.example.com") in production. With
   // nothing configured, this falls back to same-origin-only (no cross-origin access at all)
   // rather than silently defaulting back to a wildcard.
-  const corsOrigins = (process.env.DEVNULL_CORS_ORIGIN ?? "")
+  const corsOrigins = (process.env.XCODER_CORS_ORIGIN ?? "")
     .split(",")
     .map((o) => o.trim())
     .filter(Boolean);
@@ -64,13 +64,13 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
 
   // Global error handler
   app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-    console.error("[devnull API] Unhandled error:", err);
+    console.error("[xcoder API] Unhandled error:", err);
     res.status(500).json({ success: false, error: "Internal server error" });
   });
 
   const server = app.listen(port, host, () => {
-    console.log(`[devnull API] Listening on http://${host}:${port}`);
-    console.log(`[devnull API] Endpoints:`);
+    console.log(`[xcoder API] Listening on http://${host}:${port}`);
+    console.log(`[xcoder API] Endpoints:`);
     console.log(`  POST /api/v1/login`);
     console.log(`  POST /api/v1/logout`);
     console.log(`  GET  /api/v1/health`);
@@ -90,7 +90,7 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
     console.log(`  PUT  /api/v1/plans/:planId/tasks/:taskId`);
     console.log(`  POST /api/v1/plans/:id/tasks`);
     console.log(`  DELETE /api/v1/plans/:planId/tasks/:taskId`);
-    console.log(`[devnull API] Auth: Token-based authentication active. First user to register becomes admin.`);
+    console.log(`[xcoder API] Auth: Token-based authentication active. First user to register becomes admin.`);
   });
 
   return server;

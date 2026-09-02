@@ -149,9 +149,9 @@ describe("defaults", () => {
     expect(config.api_key_env).toBe("DEEPSEEK_API_KEY");
   });
 
-  it("shipped agent/config/llm.yaml sets provider: deepseek", () => {
+  it("shipped agent/config/llm.yaml sets provider: ollama", () => {
     const content = fs.readFileSync("agent/config/llm.yaml", "utf-8");
-    expect(content).toContain("provider: deepseek");
+    expect(content).toContain("provider: ollama");
   });
 
   it("registry has the documented known providers with deepseek first", () => {

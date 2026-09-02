@@ -67,7 +67,7 @@ async function main() {
 
   // --- 3. Full orchestrator loop, live, including the goal validator ---
   console.log("[3/3] Full ReAct loop with real tool dispatch + goal validator...");
-  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "devnull-live-"));
+  const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-live-"));
   fs.writeFileSync(path.join(cwd, "buggy.js"), "function add(a,b){ return a+b+1; }\nconsole.log(add(2,3));\n");
 
   const orchestrator = new ReActOrchestrator(llm, telemetry, { cwd, maxIterations: 6, planMode: "never" });

@@ -20,7 +20,7 @@ export async function summarizeUrl(url: string): Promise<UrlSummary> {
   const res = await fetch(url, {
     headers: {
       "User-Agent":
-        "Mozilla/5.0 (compatible; devnull-summarizer/1.0; +https://github.com/neural-node-labs/devnull)",
+        "Mozilla/5.0 (compatible; xcoder-summarizer/1.0; +https://github.com/neural-node-labs/xcoder)",
       Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
     },
   });

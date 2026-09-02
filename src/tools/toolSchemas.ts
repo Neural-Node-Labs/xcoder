@@ -136,7 +136,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       description:
         "Run a command on a remote host over SSH, or upload/download a file via scp. " +
         "For fleet operations across multiple hosts, prefer ssh_copy_tool and ssh_run_command " +
-        "which use shared env-var credentials (DEVNULL_SSH_TARGETS/DEVNULL_SSH_USER/DEVNULL_SSH_PASSWORD). " +
+        "which use shared env-var credentials (XCODER_SSH_TARGETS/XCODER_SSH_USER/XCODER_SSH_PASSWORD). " +
         "Credentials can be provided inline OR via environment variable names: set userEnvVar to the " +
         "name of an env var containing the SSH username, and passwordEnvVar to the name of an env var " +
         "containing the password. This avoids leaking secrets into logs/context.",
@@ -164,7 +164,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: "schedule_task_tool",
       description:
-        "Schedule a shell command to run later: recurring via OS cron ('add' with cronExpr), one-off after a delay ('once'), or list/remove existing devnull-managed cron jobs.",
+        "Schedule a shell command to run later: recurring via OS cron ('add' with cronExpr), one-off after a delay ('once'), or list/remove existing xcoder-managed cron jobs.",
       parameters: {
         type: "object",
         properties: {
@@ -233,7 +233,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: "docker_compose_deploy_tool",
       description:
-        "Run `docker compose up -d --build` locally in the specified project directory. Use this to deploy the devnull stack (or any docker-compose project) on the local machine. Returns build logs and container status.",
+        "Run `docker compose up -d --build` locally in the specified project directory. Use this to deploy the xcoder stack (or any docker-compose project) on the local machine. Returns build logs and container status.",
       parameters: {
         type: "object",
         properties: {
@@ -257,7 +257,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
         "env var containing the SSH username, and passwordEnvVar to the name of an env var containing the SSH " +
         "password. This avoids leaking secrets into logs/context. " +
         "For fleet operations across multiple hosts, prefer ssh_copy_tool and ssh_run_command which use shared " +
-        "env-var credentials (DEVNULL_SSH_TARGETS/DEVNULL_SSH_USER/DEVNULL_SSH_PASSWORD).",
+        "env-var credentials (XCODER_SSH_TARGETS/XCODER_SSH_USER/XCODER_SSH_PASSWORD).",
       parameters: {
         type: "object",
         properties: {
@@ -439,7 +439,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       name: "ssh_copy_tool",
       description:
         "Upload a local file or folder from this workspace to one or all configured remote fleet targets over SFTP " +
-        "(configured via DEVNULL_SSH_TARGETS/DEVNULL_SSH_USER/DEVNULL_SSH_PASSWORD - no host/user/key needed per call, " +
+        "(configured via XCODER_SSH_TARGETS/XCODER_SSH_USER/XCODER_SSH_PASSWORD - no host/user/key needed per call, " +
         "unlike ssh_tool). Omit 'target' to upload to ALL configured targets; set 'target' to one host or host:port " +
         "to upload to just that one. Use this to get build context, compose files, or configs onto the fleet before " +
         "running commands against them with ssh_run_command.",
@@ -460,7 +460,7 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       name: "ssh_run_command",
       description:
         "Execute a shell command (or multi-line bash script) over SSH on one or all configured remote fleet targets " +
-        "(configured via DEVNULL_SSH_TARGETS/DEVNULL_SSH_USER/DEVNULL_SSH_PASSWORD). Omit 'target' to run on ALL " +
+        "(configured via XCODER_SSH_TARGETS/XCODER_SSH_USER/XCODER_SSH_PASSWORD). Omit 'target' to run on ALL " +
         "configured targets in parallel; set 'target' to run on just one. Use this as the remote equivalent of " +
         "run_command_tool - and as your remote VALIDATION step: always verify a remote change actually worked " +
         "(check process/container status, curl a health endpoint, check exit codes) rather than assuming success.",

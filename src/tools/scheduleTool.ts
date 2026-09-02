@@ -2,8 +2,8 @@ import { spawn, execFile } from "node:child_process";
 import { promisify } from "node:util";
 
 const execFileP = promisify(execFile);
-const MARKER_PREFIX = "# devnull-schedule:";
-const WIN_TASK_PREFIX = "devnull_"; // schtasks task names: keep it simple/safe, no spaces or special chars
+const MARKER_PREFIX = "# xcoder-schedule:";
+const WIN_TASK_PREFIX = "xcoder_"; // schtasks task names: keep it simple/safe, no spaces or special chars
 
 export interface ScheduledJob {
   id: string;

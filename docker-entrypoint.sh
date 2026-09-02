@@ -1,9 +1,9 @@
 #!/bin/sh
-# devnull container entrypoint.
+# xcoder container entrypoint.
 #
 # 1. Resolves an allowlisted set of Docker-secrets-style `${VAR}_FILE`
 #    pointers into `${VAR}` (e.g. DATABASE_PASSWORD_FILE=/run/secrets/db_password
-#    -> DATABASE_PASSWORD=...). See DEVNULL_SECRET_VARS below for the list.
+#    -> DATABASE_PASSWORD=...). See XCODER_SECRET_VARS below for the list.
 # 2. Waits for PostgreSQL to accept connections.
 # 3. Runs `--initialize-db` (idempotent — safe on every restart).
 # 4. execs the requested command.
@@ -14,11 +14,11 @@ set -e
 # `*_FILE` env var in the container — unrelated tooling vars (SSL_CERT_FILE,
 # PIP_CONFIG_FILE, etc.) could otherwise be swept up unintentionally. Add to
 # this list if you configure a custom `api_key_env` name in agent/config/llm.yaml.
-DEVNULL_SECRET_VARS="DATABASE_PASSWORD DATABASE_URL ANTHROPIC_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY OPENROUTER_API_KEY GROQ_API_KEY"
+XCODER_SECRET_VARS="DATABASE_PASSWORD DATABASE_URL ANTHROPIC_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY OPENROUTER_API_KEY GROQ_API_KEY"
 
 resolve_secret_files_into_env() {
   tmpfile=$(mktemp)
-  for base_name in $DEVNULL_SECRET_VARS; do
+  for base_name in $XCODER_SECRET_VARS; do
     file_var="${base_name}_FILE"
     file_path=$(eval echo "\$$file_var")
     if [ -z "$file_path" ]; then

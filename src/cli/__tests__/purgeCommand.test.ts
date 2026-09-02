@@ -11,7 +11,7 @@ import { PURGE_TARGETS } from "../purge.js";
 let tmpRoot: string;
 
 beforeEach(() => {
-  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "devnull-purge-cmd-"));
+  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-purge-cmd-"));
 });
 
 afterEach(() => {
@@ -27,7 +27,7 @@ function makeTargets(root: string): void {
 
 function installedProgram(tmp = tmpRoot): Command {
   const program = new Command()
-    .name("devnull")
+    .name("xcoder")
     .argument("[task]", "task description")
     .exitOverride();
   return registerPurgeSubcommand(program, { cwd: tmp });
@@ -49,7 +49,7 @@ async function parsePurge(program: Command, args: string[]): Promise<{ stdout: s
   console.log = (...a: unknown[]) => stdout.push(a.map(String).join(" "));
   console.error = (...a: unknown[]) => stderr.push(a.map(String).join(" "));
   try {
-    await program.parseAsync(["node", "devnull", ...args]);
+    await program.parseAsync(["node", "xcoder", ...args]);
   } catch (err) {
     // .exitOverride() turns --help into a thrown CommanderError with exitCode 0.
     const exitCode = (err as { exitCode?: number }).exitCode;

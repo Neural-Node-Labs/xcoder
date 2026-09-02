@@ -1,5 +1,5 @@
 /**
- * Database layer for devnull.
+ * Database layer for xcoder.
  *
  * PostgreSQL-only. Provides a connection factory and shared interfaces.
  *

@@ -1,11 +1,11 @@
 # xcoder
 
-**A DAG-based SDLC orchestration platform.** devnull breaks a task into an inspectable
+**A DAG-based SDLC orchestration platform.** xcoder breaks a task into an inspectable
 pipeline of software-development stages, runs each stage in its own isolated sub-agent, and
 never trusts a stage's own claim of success — every deliverable is independently re-checked by
 a Validation Gate before the pipeline is allowed to advance.
 
-Ships three ways to use it: a CLI (`devnull`), an HTTP API, and a web dashboard.
+Ships three ways to use it: a CLI (`xcoder`), an HTTP API, and a web dashboard.
 
 ## Quick start
 
@@ -33,16 +33,21 @@ so run the API server first (or via `--ui`, which starts both).
 docker compose up --build
 ```
 
-This starts three containers:
+This starts four containers:
 
 | Service    | Description                                         | Port |
 |------------|------------------------------------------------------|------|
 | `postgres` | PostgreSQL 16, with a named volume for persistence    | 5432 |
-| `api`      | devnull HTTP API — waits for Postgres, runs migrations, then serves | 3001 |
+| `ollama`   | Local LLM backend — pulls `qwen2.5-coder:0.5b` on first start | 11434 |
+| `api`      | xcoder HTTP API — waits for Postgres and Ollama, runs migrations, then serves | 3001 |
 | `ui`       | The dashboard, built and served via nginx (proxies `/api` to `api`) | 5173 |
 
-Put your LLM provider key(s) in a `.env` file next to `docker-compose.yml` before starting
-(`docker compose` loads it automatically) — see `.env.example` for the full list of variables.
+**Ollama is the default LLM backend** — `agent/config/llm.yaml` is mounted read-only into
+the `api` container and points at `http://ollama:11434/v1`, so `docker compose up` works
+with no API key at all. Swap it for a cloud provider by editing `agent/config/llm.yaml`
+(see the provider examples inside that file) and putting the matching key in a `.env` file
+next to `docker-compose.yml` (`docker compose` loads it automatically) — see `.env.example`
+for the full list of variables.
 The `api` container's entrypoint (`docker-entrypoint.sh`) waits for PostgreSQL to accept
 connections and runs the idempotent `--initialize-db` step on every start, so there's no
 separate init command to run.
@@ -53,10 +58,10 @@ Once it's up: the dashboard is at `http://localhost:5173` and the API at
 To build/run just the API image standalone (e.g. against an external Postgres):
 
 ```bash
-docker build -t devnull-api .
+docker build -t xcoder-api .
 docker run -p 3001:3001 --env-file .env \
-  -e DATABASE_URL=postgres://user:pass@host:5432/devnull \
-  devnull-api
+  -e DATABASE_URL=postgres://user:pass@host:5432/xcoder \
+  xcoder-api
 ```
 
 #### Production hardening
@@ -89,7 +94,7 @@ should never be committed or baked into an image layer.
 
 ## Database
 
-devnull requires PostgreSQL — there is no other supported backend. Connection settings come
+xcoder requires PostgreSQL — there is no other supported backend. Connection settings come
 from `DATABASE_URL` (takes precedence) or the individual `DATABASE_HOST`/`PORT`/`NAME`/`USER`/
 `PASSWORD`/`SSL` vars; see `.env.example` for the full list and defaults. `src/db/config.ts`
 loads them, `src/db/postgresClient.ts` wraps `pg.Pool`, and every store (`src/api/*Store.ts`,
@@ -118,7 +123,7 @@ a dedicated CLI flag (`--react`, `--lean`, …), or the `engine` field on `/api/
 
 ## Local models (Ollama)
 
-No API key required. Point `agent/config/llm.yaml` at a `provider: ollama` model and devnull
+No API key required. Point `agent/config/llm.yaml` at a `provider: ollama` model and xcoder
 talks to `http://localhost:11434` with no `Authorization` header at all — see
 `NO_AUTH_PROVIDERS` in `src/config/loadConfig.ts`.
 
@@ -128,7 +133,7 @@ talks to `http://localhost:11434` with no `Authorization` header at all — see
 src/                    backend: CLI, HTTP API, engines, tools, telemetry, database
 ui/                     web dashboard (Vite + React + TypeScript)
 migrations/postgres/    versioned SQL migrations, tracked in the _migrations table (see src/db/migrations.ts)
-agent/                  (not included — see below) install-level config: llm.yaml, devnull.md, skills/
+agent/                  (not included — see below) install-level config: llm.yaml, xcoder.md, skills/
 .agent/                 per-workspace runtime state: tasks/, logs/, index/, plans/, reports/
 Dockerfile              API/CLI image (multi-stage build, non-root, HEALTHCHECK)
 docker-entrypoint.sh    waits for Postgres, resolves Docker-secrets *_FILE vars, runs --initialize-db
@@ -139,18 +144,18 @@ ui/Dockerfile           dashboard image (Vite build served via non-root nginx)
 ```
 
 `agent/` (no leading dot) is the install/config directory — `agent/config/llm.yaml` for LLM
-provider configuration and `agent/devnull.md` for the engineering protocol markdown that gets
+provider configuration and `agent/xcoder.md` for the engineering protocol markdown that gets
 folded into every engine's system prompt. It is intentionally not part of this repository
-checkout; create it at the project root (or point `DEVNULL_HOME` at wherever it lives) before
+checkout; create it at the project root (or point `XCODER_HOME` at wherever it lives) before
 running anything that needs an LLM.
 
-`.agent/` (with a leading dot) is fully managed by devnull itself — nothing under it needs to
-be created by hand, and `devnull purge` removes it entirely.
+`.agent/` (with a leading dot) is fully managed by xcoder itself — nothing under it needs to
+be created by hand, and `xcoder purge` removes it entirely.
 
 ## Try it with no API key at all
 
 ```bash
-devnull --task "add a health check endpoint" --mock
+xcoder --task "add a health check endpoint" --mock
 ```
 
 `--mock` swaps in `AutoMockLlmClient` (`src/llm/mockClient.ts`) for the real provider — no API
@@ -158,7 +163,7 @@ key, no network call, works with any task and any engine. Every stage/phase comp
 step with a `[MOCK]`-prefixed result, so you can try engine selection, the SDLC DAG, the
 Validation Gate, plan approval, and the web dashboard end-to-end before configuring a real LLM.
 Combine with `--serve`/`--ui` to run the API server itself in mock mode, or set
-`DEVNULL_MOCK_LLM=true` directly for a long-running server.
+`XCODER_MOCK_LLM=true` directly for a long-running server.
 
 Add `--verbose` for a startup banner (engine/provider/model/mock status) and much higher detail
 in the thought/action/observation console output.
@@ -166,15 +171,15 @@ in the thought/action/observation console output.
 ## CLI
 
 ```
-devnull [task]                    run a task through the default (sdlc) engine
-devnull --task "..." --sdlc       explicit engine selection
-devnull --task "..." --mock       run without a real LLM connection (see above)
-devnull --task "..." --verbose    print a startup banner and full-detail console output
-devnull --chat                    interactive chat mode
-devnull --serve                   start the HTTP API only
-devnull --ui                      start the API and the web dashboard together
-devnull purge                     remove all devnull-generated state (.agent/)
-devnull --help                    full flag reference
+xcoder [task]                    run a task through the default (sdlc) engine
+xcoder --task "..." --sdlc       explicit engine selection
+xcoder --task "..." --mock       run without a real LLM connection (see above)
+xcoder --task "..." --verbose    print a startup banner and full-detail console output
+xcoder --chat                    interactive chat mode
+xcoder --serve                   start the HTTP API only
+xcoder --ui                      start the API and the web dashboard together
+xcoder purge                     remove all xcoder-generated state (.agent/)
+xcoder --help                    full flag reference
 ```
 
 ## Scripts

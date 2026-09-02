@@ -3,7 +3,7 @@
 //
 // Intended-behavior tests for the executable multi-provider routing contract.
 // The documented contract (README + docs/en/setup.md + agent/config/llm.yaml):
-//   1. DeepSeek is the default provider.
+//   1. Ollama is the default provider (matches the `ollama` service in docker-compose.yml).
 //   2. An explicit base_url always wins over the built-in provider URL registry.
 //   3. When base_url is omitted, the registry entry for
 //      deepseek/openai/openrouter/groq/ollama is used.
@@ -70,14 +70,12 @@ describe("multi-provider routing contract (loadConfig)", () => {
     expect(config.api_key_env).toBe("DEEPSEEK_API_KEY");
   });
 
-  it("the shipped agent/config/llm.yaml is a valid config and keeps DeepSeek as default", () => {
+  it("the shipped agent/config/llm.yaml is a valid config and defaults to Ollama", () => {
     const doc = yaml.load(readFileSync(LLM_YAML, "utf-8")) as LlmConfig;
-    expect(doc.provider).toBe("deepseek");
-    expect(doc.api_key_env).toBe("DEEPSEEK_API_KEY");
-    expect(doc.base_url).toBe("https://api.deepseek.com/v1");
-    expect(doc.model).toMatch(/^deepseek-v4-/);
-    expect(doc.fallback?.provider).toBe("deepseek");
-    expect(doc.fallback?.api_key_env).toBe("DEEPSEEK_API_KEY");
+    expect(doc.provider).toBe("ollama");
+    expect(doc.base_url).toBe("http://ollama:11434/v1");
+    expect(doc.model).toBe("qwen2.5-coder:0.5b");
+    expect(doc.fallback?.provider).toBe("ollama");
   });
 
   it("the config never inlines keys (API keys live in env vars named by api_key_env)", () => {

@@ -3,7 +3,7 @@ import type { DatabaseType } from "./types.js";
 /**
  * All configurable PostgreSQL connection parameters.
  *
- * Defaults: localhost:5432, devnull/devnull_pass, database=devnull
+ * Defaults: localhost:5432, xcoder/xcoder_pass, database=xcoder
  */
 export interface DatabaseConfig {
   /** Backend identifier. Always "postgres" — kept for forward compatibility. */
@@ -30,9 +30,9 @@ export interface DatabaseConfig {
  *   DATABASE_URL           = PostgreSQL connection string (overrides individual params)
  *   DATABASE_HOST          = PostgreSQL host (default: localhost)
  *   DATABASE_PORT          = PostgreSQL port (default: 5432)
- *   DATABASE_NAME          = PostgreSQL database name (default: devnull)
- *   DATABASE_USER          = PostgreSQL user (default: devnull)
- *   DATABASE_PASSWORD      = PostgreSQL password (default: devnull_pass)
+ *   DATABASE_NAME          = PostgreSQL database name (default: xcoder)
+ *   DATABASE_USER          = PostgreSQL user (default: xcoder)
+ *   DATABASE_PASSWORD      = PostgreSQL password (default: xcoder_pass)
  *   DATABASE_SSL           = "true" to enable SSL (default: false)
  *   DATABASE_POOL_MAX      = max pool size (default: 5)
  *   DATABASE_POOL_IDLE     = idle timeout ms (default: 30000)
@@ -45,9 +45,9 @@ export function loadDatabaseConfig(): DatabaseConfig {
     postgresUrl: process.env.DATABASE_URL,
     postgresHost: process.env.DATABASE_HOST || "localhost",
     postgresPort: parseInt(process.env.DATABASE_PORT || "5432", 10),
-    postgresDatabase: process.env.DATABASE_NAME || "devnull",
-    postgresUser: process.env.DATABASE_USER || "devnull",
-    postgresPassword: process.env.DATABASE_PASSWORD || "devnull_pass",
+    postgresDatabase: process.env.DATABASE_NAME || "xcoder",
+    postgresUser: process.env.DATABASE_USER || "xcoder",
+    postgresPassword: process.env.DATABASE_PASSWORD || "xcoder_pass",
     postgresSsl: process.env.DATABASE_SSL === "true",
     postgresMax: parseInt(process.env.DATABASE_POOL_MAX || "5", 10),
     postgresIdleTimeoutMillis: parseInt(process.env.DATABASE_POOL_IDLE || "30000", 10),

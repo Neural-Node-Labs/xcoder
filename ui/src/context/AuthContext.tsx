@@ -18,9 +18,9 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 function loadInitial(): AuthState {
   const token = getAuthToken();
-  const userId = localStorage.getItem("devnull_user_id");
-  const username = localStorage.getItem("devnull_username");
-  const role = localStorage.getItem("devnull_role") as "admin" | "user" | null;
+  const userId = localStorage.getItem("xcoder_user_id");
+  const username = localStorage.getItem("xcoder_username");
+  const role = localStorage.getItem("xcoder_role") as "admin" | "user" | null;
   return { token, userId, username, role };
 }
 
@@ -29,9 +29,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const persist = (token: string, userId: string, username: string, role: "admin" | "user") => {
     setAuthToken(token);
-    localStorage.setItem("devnull_user_id", userId);
-    localStorage.setItem("devnull_username", username);
-    localStorage.setItem("devnull_role", role);
+    localStorage.setItem("xcoder_user_id", userId);
+    localStorage.setItem("xcoder_username", username);
+    localStorage.setItem("xcoder_role", role);
     setState({ token, userId, username, role });
   };
 
@@ -48,9 +48,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const logout = useCallback(() => {
     api.logout().catch(() => {});
     setAuthToken(null);
-    localStorage.removeItem("devnull_user_id");
-    localStorage.removeItem("devnull_username");
-    localStorage.removeItem("devnull_role");
+    localStorage.removeItem("xcoder_user_id");
+    localStorage.removeItem("xcoder_username");
+    localStorage.removeItem("xcoder_role");
     setState({ token: null, userId: null, username: null, role: null });
   }, []);
 

@@ -3,16 +3,16 @@ services:
     image: postgres:16-alpine
     restart: unless-stopped
     environment:
-      POSTGRES_USER: ${DATABASE_USER:-devnull}
-      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-devnull_pass}
-      POSTGRES_DB: ${DATABASE_NAME:-devnull}
+      POSTGRES_USER: ${DATABASE_USER:-xcoder}
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:-xcoder_pass}
+      POSTGRES_DB: ${DATABASE_NAME:-xcoder}
     volumes:
-      - devnull-postgres-data:/var/lib/postgresql/data
+      - xcoder-postgres-data:/var/lib/postgresql/data
     ports:
       # Exposed on the host for local psql/GUI access; remove if not needed.
       - "${DATABASE_PORT:-5432}:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-devnull} -d ${DATABASE_NAME:-devnull}"]
+      test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-xcoder} -d ${DATABASE_NAME:-xcoder}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -30,21 +30,31 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+      ollama:
+        condition: service_healthy
     environment:
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
-      DATABASE_NAME: ${DATABASE_NAME:-devnull}
-      DATABASE_USER: ${DATABASE_USER:-devnull}
-      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-devnull_pass}
+      DATABASE_NAME: ${DATABASE_NAME:-xcoder}
+      DATABASE_USER: ${DATABASE_USER:-xcoder}
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:-xcoder_pass}
       DATABASE_SSL: "false"
-      DEVNULL_API_PORT: 3001
-      DEVNULL_API_HOST: 0.0.0.0
-      # LLM provider keys — set these in a .env file alongside this compose
-      # file (docker compose automatically loads .env), or export them in
-      # your shell before running `docker compose up`.
+      XCODER_API_PORT: 3001
+      XCODER_API_HOST: 0.0.0.0
+      # Default backend is Ollama (agent/config/llm.yaml, mounted below) — no key needed.
+      # Set these if you switch the mounted llm.yaml to a cloud provider instead.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
-      DEVNULL_MOCK_LLM: ${DEVNULL_MOCK_LLM:-}
+      DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
+      XCODER_MOCK_LLM: ${XCODER_MOCK_LLM:-}
+    volumes:
+      # Bakes in agent/config/llm.yaml (Ollama by default) — the Dockerfile doesn't COPY
+      # agent/ into the image, so without this mount the container falls back to the
+      # DeepSeek default compiled into loadConfig.ts.
+      - type: bind
+        source: ./agent
+        target: /app/agent
+        read_only: true
     ports:
       - "3001:3001"
     healthcheck:
@@ -104,4 +114,4 @@ services:
 
 
 volumes:
-  devnull-postgres-data:
+  xcoder-postgres-data:

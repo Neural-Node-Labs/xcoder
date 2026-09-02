@@ -69,10 +69,10 @@ jobs:
       - name: Start the stack
         run: |
           cat > .env << 'ENVEOF'
-          DATABASE_USER=devnull
-          DATABASE_PASSWORD=devnull_pass
-          DATABASE_NAME=devnull
-          DEVNULL_MOCK_LLM=1
+          DATABASE_USER=xcoder
+          DATABASE_PASSWORD=xcoder_pass
+          DATABASE_NAME=xcoder
+          XCODER_MOCK_LLM=1
           ENVEOF
           docker compose up -d
 

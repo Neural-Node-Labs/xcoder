@@ -16,7 +16,7 @@ let store: FilePlanStore;
 
 beforeEach(() => {
   originalCwd = process.cwd();
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "devnull-planstore-test-"));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-planstore-test-"));
   process.chdir(tmpDir);
   store = new FilePlanStore();
 });

@@ -188,7 +188,7 @@ async function diagnoseToolsAndSkillsUsed(llm: LlmClient, baseDir: string): Prom
 
   return {
     id: "4",
-    title: "DeepSeek effectively uses devnull's tools and skills (not just talking about the task)",
+    title: "DeepSeek effectively uses xcoder's tools and skills (not just talking about the task)",
     passed,
     evidence: [
       `Skills routed for this task: ${routedSkills.map((s) => s.name).join(", ") || "(none)"}`,
@@ -262,7 +262,7 @@ async function diagnoseGroundUpDeployableApp(llm: LlmClient, baseDir: string): P
   const dockerAvailable = spawnSync("which", ["docker"]).status === 0;
   let dockerBuildResult = "docker not available on this machine — skipped actual image build.";
   if (dockerAvailable && dockerfileExists) {
-    const build = spawnSync("docker", ["build", "-t", "devnull-diag-app", dir], { timeout: 120_000, encoding: "utf-8" });
+    const build = spawnSync("docker", ["build", "-t", "xcoder-diag-app", dir], { timeout: 120_000, encoding: "utf-8" });
     dockerBuildResult = build.status === 0 ? "docker build succeeded." : `docker build FAILED: ${(build.stderr ?? "").slice(0, 300)}`;
   }
 
@@ -367,7 +367,7 @@ export async function runLiveDiagnostics(
   modelLabel: string,
   opts: { baseDir?: string } = {}
 ): Promise<LiveDiagnosticsReport> {
-  const baseDir = opts.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "devnull-live-diagnostics-"));
+  const baseDir = opts.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-live-diagnostics-"));
   const results: DiagnosticResult[] = [];
 
   results.push(await diagnoseIterationEndsOnSuccess(llm, baseDir));
@@ -395,7 +395,7 @@ export async function runLiveDiagnostics(
 
 function renderMarkdown(report: LiveDiagnosticsReport, baseDir: string): string {
   const lines: string[] = [];
-  lines.push(`# devnull Live ReAct Diagnostics (real ${report.model} connection)`);
+  lines.push(`# xcoder Live ReAct Diagnostics (real ${report.model} connection)`);
   lines.push(`Generated: ${report.timestamp}`);
   lines.push(`Workspace: ${baseDir}`);
   lines.push("");

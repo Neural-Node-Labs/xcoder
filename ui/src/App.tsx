@@ -2,6 +2,7 @@ import { useState } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { LoginPage } from "./pages/LoginPage";
 import { Sidebar, Page } from "./components/Sidebar";
+import { ThemeControls } from "./components/ThemeControls";
 import { Dashboard } from "./pages/Dashboard";
 import { WbsBoard } from "./pages/WbsBoard";
 import { TaskHistoryPage } from "./pages/TaskHistoryPage";
@@ -53,7 +54,12 @@ function Shell() {
 
 function Gate() {
   const { token } = useAuth();
-  return token ? <Shell /> : <LoginPage />;
+  return (
+    <>
+      {token ? <Shell /> : <LoginPage />}
+      <ThemeControls />
+    </>
+  );
 }
 
 export function App() {

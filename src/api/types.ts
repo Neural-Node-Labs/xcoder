@@ -1,5 +1,5 @@
 /**
- * API-specific types for the devnull HTTP API.
+ * API-specific types for the xcoder HTTP API.
  */
 
 /** Standard API envelope for all responses. */
@@ -166,7 +166,7 @@ export interface HealthResponse {
   status: "ok";
   version: string;
   uptime: number;
-  /** True when this server is running with DEVNULL_MOCK_LLM set — every /chat and /chat/plan
+  /** True when this server is running with XCODER_MOCK_LLM set — every /chat and /chat/plan
    *  call is answered by AutoMockLlmClient, not a real provider. See src/llm/mockClient.ts. */
   mockLlm: boolean;
 }

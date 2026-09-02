@@ -133,12 +133,12 @@ function buildDockerCommand(opts: DeployOptions): string {
 
 function buildRollbackSnapshotCommand(remotePath: string): string {
   // Save the current docker compose ps state so we can restore if needed
-  return `cd ${remotePath} && (docker compose ps --format json 2>/dev/null || echo '{"snapshot":"none"}') > .devnull-rollback-snapshot.json && echo "SNAPSHOT_SAVED"`;
+  return `cd ${remotePath} && (docker compose ps --format json 2>/dev/null || echo '{"snapshot":"none"}') > .xcoder-rollback-snapshot.json && echo "SNAPSHOT_SAVED"`;
 }
 
 function buildRollbackRestoreCommand(remotePath: string): string {
   // Restore the previous compose state from the snapshot
-  return `cd ${remotePath} && if [ -f .devnull-rollback-snapshot.json ]; then echo "Rolling back..."; docker compose down 2>/dev/null; docker compose up -d --build 2>/dev/null || true; echo "ROLLBACK_COMPLETE"; else echo "NO_SNAPSHOT"; fi`;
+  return `cd ${remotePath} && if [ -f .xcoder-rollback-snapshot.json ]; then echo "Rolling back..."; docker compose down 2>/dev/null; docker compose up -d --build 2>/dev/null || true; echo "ROLLBACK_COMPLETE"; else echo "NO_SNAPSHOT"; fi`;
 }
 
 function buildHealthCheckCommand(remotePath: string, composeFile?: string): string {
@@ -359,11 +359,11 @@ export async function deployWorkspaceViaSsh(
     // source-file searches but wrong for deployment where config files matter.
     const ignore = loadIgnoreRules(cwd);
     const files = await fg("**/*", { cwd, ignore, dot: true, onlyFiles: true });
-    const tarPath = path.join(os.tmpdir(), `devnull-deploy-${Date.now()}.tar.gz`);
+    const tarPath = path.join(os.tmpdir(), `xcoder-deploy-${Date.now()}.tar.gz`);
     report.tarBytes = await tarWorkspace(cwd, files, tarPath);
 
     // ── Step 4: Upload the tarball ─────────────────────────────────────────
-    const remoteTarPath = `${remotePath}/.devnull-deploy.tar.gz`;
+    const remoteTarPath = `${remotePath}/.xcoder-deploy.tar.gz`;
     report.uploadResult = await scpUpload(target, tarPath, remoteTarPath);
     fs.unlinkSync(tarPath);
 

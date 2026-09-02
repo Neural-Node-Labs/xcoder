@@ -5,12 +5,12 @@ import { resolveConfigPath, resolveAgentPath } from "../config/loadConfig.js";
 import { resolveLessonsPath, resolveTodoPath } from "../config/paths.js";
 import { describeShell } from "../tools/runCommandTool.js";
 
-const PROTOCOL_PATH = path.join("devnull.md");
+const PROTOCOL_PATH = path.join("xcoder.md");
 
 /**
  * TAMA: Ang "agent/" (walang tuldok) ay iba sa ".agent/" (may tuldok) sa codebase na ito —
- * ang una ay ang install/config na direktoryo (config/llm.yaml, devnull.md), na-resolba ng
- * resolveConfigPath() na maaaring mabuhay sa app dir/home dir/DEVNULL_HOME; ang huli ay ang
+ * ang una ay ang install/config na direktoryo (config/llm.yaml, xcoder.md), na-resolba ng
+ * resolveConfigPath() na maaaring mabuhay sa app dir/home dir/XCODER_HOME; ang huli ay ang
  * per-workspace na runtime state ng .agent/ (tasks/, logs/, index/, plans/), palaging kaugnay
  * ng project root. Ang loadProtocol() ay gumagamit ng "agent/" (config); ang loadLessons/
  * recordLesson/writeTodo/appendTodoReview ay gumagamit ng ".agent/" (runtime state) sa
@@ -20,7 +20,7 @@ const PROTOCOL_PATH = path.join("devnull.md");
  * mismo at direktang ginawa ang `<projectRoot>/lessons.md` — isang TOP-LEVEL na file, hindi
  * kailanman ".agent/lessons.md" -- habang ang buildProtocolPrompt() naman ay laging nagbabasa
  * mula sa resolveAgentPath() at itinatapon ang tahasang `cwd` argument nito mismo. Ang resulta:
- * hindi kailanman nababasa pabalik ang mga lessons na naitala sa pamamagitan ng `devnull --lesson`
+ * hindi kailanman nababasa pabalik ang mga lessons na naitala sa pamamagitan ng `xcoder --lesson`
  * dahil isinulat ang mga ito sa ibang file kaysa sa binabasa. Naayos na ito -- iisang function
  * (resolveLessonsPath) na ngayon ang tanging bumubuo ng path na ito, at ginagamit na ni
  * buildProtocolPrompt ang aktwal na `cwd` na ipinasa dito.
@@ -95,7 +95,7 @@ export function buildProtocolPrompt(cwd: string = process.cwd()): string {
 
   let out = `<runtime_environment>\nCommands from run_command_tool execute on this host via ${describeShell()}\n</runtime_environment>\n\n`;
   if (protocol) {
-    out += `<system_directive>\nYou are devnull, operating under the following engineering protocol.\n</system_directive>\n\n<engineering_protocol>\n${protocol}\n</engineering_protocol>\n\n`;
+    out += `<system_directive>\nYou are xcoder, operating under the following engineering protocol.\n</system_directive>\n\n<engineering_protocol>\n${protocol}\n</engineering_protocol>\n\n`;
   }
   if (lessons) {
     out += `<lessons_learned>\nPatterns captured from prior corrections in this workspace — apply them proactively.\n${lessons}\n</lessons_learned>\n\n`;

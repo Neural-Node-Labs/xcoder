@@ -43,7 +43,7 @@ function configureIdentity(repoDir: string) {
 }
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "devnull-github-test-"));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-github-test-"));
 });
 
 afterEach(() => {

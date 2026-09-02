@@ -10,7 +10,7 @@ describe("token expiration (security fix — tokens previously never expired)", 
 
   it("an expired token is rejected by validateToken and evicted from the store", async () => {
     vi.resetModules();
-    process.env.DEVNULL_TOKEN_TTL_MS = "50"; // 50ms TTL for a fast test
+    process.env.XCODER_TOKEN_TTL_MS = "50"; // 50ms TTL for a fast test
     const auth = await import("../auth.js");
     const token = auth.generateToken("user-1", "alice", "user");
     expect(auth.validateToken(token)).not.toBeNull();
@@ -18,12 +18,12 @@ describe("token expiration (security fix — tokens previously never expired)", 
     await new Promise((r) => setTimeout(r, 80));
 
     expect(auth.validateToken(token)).toBeNull();
-    delete process.env.DEVNULL_TOKEN_TTL_MS;
+    delete process.env.XCODER_TOKEN_TTL_MS;
   });
 
   it("authMiddleware rejects an expired token with 403, not treating it as valid", async () => {
     vi.resetModules();
-    process.env.DEVNULL_TOKEN_TTL_MS = "50";
+    process.env.XCODER_TOKEN_TTL_MS = "50";
     const auth = await import("../auth.js");
     const token = auth.generateToken("user-1", "alice", "user");
     await new Promise((r) => setTimeout(r, 80));
@@ -36,7 +36,7 @@ describe("token expiration (security fix — tokens previously never expired)", 
 
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();
-    delete process.env.DEVNULL_TOKEN_TTL_MS;
+    delete process.env.XCODER_TOKEN_TTL_MS;
   });
 });
 
@@ -84,22 +84,22 @@ describe("requireAdmin (security fix — /users and /settings/llm-key had NO rol
 describe("per-user task rate limiting (security fix — /chat and /chat/plan had NO rate limiting at all)", () => {
   it("allows task submissions under the configured limit", async () => {
     vi.resetModules();
-    process.env.DEVNULL_TASK_RATE_MAX = "3";
-    process.env.DEVNULL_TASK_RATE_WINDOW_MS = "60000";
+    process.env.XCODER_TASK_RATE_MAX = "3";
+    process.env.XCODER_TASK_RATE_WINDOW_MS = "60000";
     const auth = await import("../auth.js");
 
     expect(auth.checkTaskRateLimit("user-a").limited).toBe(false);
     expect(auth.checkTaskRateLimit("user-a").limited).toBe(false);
     expect(auth.checkTaskRateLimit("user-a").limited).toBe(false);
 
-    delete process.env.DEVNULL_TASK_RATE_MAX;
-    delete process.env.DEVNULL_TASK_RATE_WINDOW_MS;
+    delete process.env.XCODER_TASK_RATE_MAX;
+    delete process.env.XCODER_TASK_RATE_WINDOW_MS;
   });
 
   it("blocks task submissions once the per-user limit is exceeded", async () => {
     vi.resetModules();
-    process.env.DEVNULL_TASK_RATE_MAX = "2";
-    process.env.DEVNULL_TASK_RATE_WINDOW_MS = "60000";
+    process.env.XCODER_TASK_RATE_MAX = "2";
+    process.env.XCODER_TASK_RATE_WINDOW_MS = "60000";
     const auth = await import("../auth.js");
 
     auth.checkTaskRateLimit("user-b");
@@ -109,14 +109,14 @@ describe("per-user task rate limiting (security fix — /chat and /chat/plan had
     expect(third.limited).toBe(true);
     expect(third.retryAfterMs).toBeGreaterThan(0);
 
-    delete process.env.DEVNULL_TASK_RATE_MAX;
-    delete process.env.DEVNULL_TASK_RATE_WINDOW_MS;
+    delete process.env.XCODER_TASK_RATE_MAX;
+    delete process.env.XCODER_TASK_RATE_WINDOW_MS;
   });
 
   it("one user hitting their limit does NOT affect a different user's ability to submit tasks", async () => {
     vi.resetModules();
-    process.env.DEVNULL_TASK_RATE_MAX = "1";
-    process.env.DEVNULL_TASK_RATE_WINDOW_MS = "60000";
+    process.env.XCODER_TASK_RATE_MAX = "1";
+    process.env.XCODER_TASK_RATE_WINDOW_MS = "60000";
     const auth = await import("../auth.js");
 
     auth.checkTaskRateLimit("noisy-user");
@@ -126,8 +126,8 @@ describe("per-user task rate limiting (security fix — /chat and /chat/plan had
     expect(noisyBlocked.limited).toBe(true);
     expect(quietUser.limited).toBe(false); // a completely separate counter, per userId
 
-    delete process.env.DEVNULL_TASK_RATE_MAX;
-    delete process.env.DEVNULL_TASK_RATE_WINDOW_MS;
+    delete process.env.XCODER_TASK_RATE_MAX;
+    delete process.env.XCODER_TASK_RATE_WINDOW_MS;
   });
 
   it("the login rate limiter and the task rate limiter use independent windows/limits", async () => {

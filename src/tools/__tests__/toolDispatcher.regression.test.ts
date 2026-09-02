@@ -117,7 +117,7 @@ function mockFetchResponse(opts: { ok?: boolean; status?: number; statusText?: s
 }
 
 beforeEach(() => {
-  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "devnull-dispatch-test-"));
+  tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-dispatch-test-"));
   vi.clearAllMocks();
 });
 
@@ -514,7 +514,7 @@ describe("dispatchToolCall — ssh_copy_tool & ssh_run_command (fleet config gat
   });
 
   it("ssh_copy_tool reports a clear error when no fleet is configured", async () => {
-    delete process.env.DEVNULL_SSH_TARGETS;
+    delete process.env.XCODER_SSH_TARGETS;
     const result = await dispatchToolCall(call("ssh_copy_tool", { localPath: "a", remotePath: "b" }), tmpDir);
     expect(result.isError).toBe(true);
     expect((result.observation as { error: string }).error).toContain("No remote fleet configured");
@@ -522,7 +522,7 @@ describe("dispatchToolCall — ssh_copy_tool & ssh_run_command (fleet config gat
   });
 
   it("ssh_run_command reports a clear error when no fleet is configured", async () => {
-    delete process.env.DEVNULL_SSH_TARGETS;
+    delete process.env.XCODER_SSH_TARGETS;
     const result = await dispatchToolCall(call("ssh_run_command", { command: "uptime" }), tmpDir);
     expect(result.isError).toBe(true);
     expect((result.observation as { error: string }).error).toContain("No remote fleet configured");
@@ -530,8 +530,8 @@ describe("dispatchToolCall — ssh_copy_tool & ssh_run_command (fleet config gat
   });
 
   it("ssh_copy_tool dispatches to sshCopy once a fleet is configured", async () => {
-    process.env.DEVNULL_SSH_TARGETS = "10.0.0.5";
-    process.env.DEVNULL_SSH_USER = "deploy";
+    process.env.XCODER_SSH_TARGETS = "10.0.0.5";
+    process.env.XCODER_SSH_USER = "deploy";
     vi.mocked(sshCopy).mockResolvedValue({ ok: true, results: [{ target: "10.0.0.5:22", ok: true, message: "uploaded" }] });
     const result = await dispatchToolCall(call("ssh_copy_tool", { localPath: "a", remotePath: "b" }), tmpDir);
     expect(result.isError).toBe(false);
@@ -539,8 +539,8 @@ describe("dispatchToolCall — ssh_copy_tool & ssh_run_command (fleet config gat
   });
 
   it("ssh_run_command dispatches to sshRunCommand once a fleet is configured and surfaces failure", async () => {
-    process.env.DEVNULL_SSH_TARGETS = "10.0.0.5";
-    process.env.DEVNULL_SSH_USER = "deploy";
+    process.env.XCODER_SSH_TARGETS = "10.0.0.5";
+    process.env.XCODER_SSH_USER = "deploy";
     vi.mocked(sshRunCommand).mockResolvedValue({ ok: false, results: [{ target: "10.0.0.5:22", ok: false, exitCode: 1, stdout: "", stderr: "err" }] });
     const result = await dispatchToolCall(call("ssh_run_command", { command: "false" }), tmpDir);
     expect(result.isError).toBe(true);

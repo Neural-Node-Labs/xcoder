@@ -115,38 +115,38 @@ describe("createLlmClient() factory — the centralized mock/real construction s
   });
 
   it("returns a real DeepSeekClient when opts.mock is false/omitted", async () => {
-    delete process.env.DEVNULL_MOCK_LLM;
+    delete process.env.XCODER_MOCK_LLM;
     const client = createLlmClient(config, undefined, undefined, { mock: false });
     expect(client).not.toBeInstanceOf(AutoMockLlmClient);
   });
 
-  it("falls back to the DEVNULL_MOCK_LLM env var when opts.mock is not explicitly given", async () => {
-    process.env.DEVNULL_MOCK_LLM = "1";
+  it("falls back to the XCODER_MOCK_LLM env var when opts.mock is not explicitly given", async () => {
+    process.env.XCODER_MOCK_LLM = "1";
     try {
       const client = createLlmClient(config);
       expect(client).toBeInstanceOf(AutoMockLlmClient);
     } finally {
-      delete process.env.DEVNULL_MOCK_LLM;
+      delete process.env.XCODER_MOCK_LLM;
     }
   });
 
-  it("DEVNULL_MOCK_LLM='true' (not just '1') also activates mock mode", async () => {
-    process.env.DEVNULL_MOCK_LLM = "true";
+  it("XCODER_MOCK_LLM='true' (not just '1') also activates mock mode", async () => {
+    process.env.XCODER_MOCK_LLM = "true";
     try {
       const client = createLlmClient(config);
       expect(client).toBeInstanceOf(AutoMockLlmClient);
     } finally {
-      delete process.env.DEVNULL_MOCK_LLM;
+      delete process.env.XCODER_MOCK_LLM;
     }
   });
 
-  it("an explicit opts.mock: false overrides a truthy DEVNULL_MOCK_LLM env var", async () => {
-    process.env.DEVNULL_MOCK_LLM = "1";
+  it("an explicit opts.mock: false overrides a truthy XCODER_MOCK_LLM env var", async () => {
+    process.env.XCODER_MOCK_LLM = "1";
     try {
       const client = createLlmClient(config, undefined, undefined, { mock: false });
       expect(client).not.toBeInstanceOf(AutoMockLlmClient);
     } finally {
-      delete process.env.DEVNULL_MOCK_LLM;
+      delete process.env.XCODER_MOCK_LLM;
     }
   });
 });

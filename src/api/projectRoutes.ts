@@ -242,7 +242,7 @@ export function registerProjectRoutes(router: Router): void {
 
     const archive = archiver("zip", { zlib: { level: 9 } });
     archive.on("error", (err: Error) => {
-      console.error("[devnull API] zip stream error:", err);
+      console.error("[xcoder API] zip stream error:", err);
       res.end();
     });
     archive.pipe(res);

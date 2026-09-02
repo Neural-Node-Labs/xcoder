@@ -25,7 +25,7 @@ export function toolCall(id: string, name: string, args: Record<string, unknown>
 
 /**
  * AutoMockLlmClient — a general-purpose, no-scripting-required stand-in for a real LLM
- * connection, powering `--mock` (CLI) and `DEVNULL_MOCK_LLM=1` (API server). Unlike
+ * connection, powering `--mock` (CLI) and `XCODER_MOCK_LLM=1` (API server). Unlike
  * MockLlmClient above (which needs a hand-written response script and is meant for unit
  * tests exercising one specific scenario), this client answers ANY task, from any engine,
  * with zero configuration — so a person can try the whole platform (engine selection, the
@@ -90,7 +90,7 @@ export class AutoMockLlmClient implements LlmClient {
     const excerpt = lastUser.replace(/\s+/g, " ").trim().slice(0, 160);
     return (
       `[MOCK] This is a simulated response — no real LLM connection was used (--mock / ` +
-      `DEVNULL_MOCK_LLM). Request excerpt: "${excerpt}${lastUser.length > 160 ? "…" : ""}". ` +
+      `XCODER_MOCK_LLM). Request excerpt: "${excerpt}${lastUser.length > 160 ? "…" : ""}". ` +
       `In mock mode every stage/phase completes in a single step with no tool calls, so this ` +
       `output demonstrates the pipeline mechanics (engine routing, the Validation Gate, health ` +
       `scoring, plan approval) without needing an API key or making a real network call.`

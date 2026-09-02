@@ -3,12 +3,12 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
-// projectStore.ts reads DEVNULL_PROJECTS_ROOT / DEVNULL_PROJECTS_STORE at module load time, so
+// projectStore.ts reads XCODER_PROJECTS_ROOT / XCODER_PROJECTS_STORE at module load time, so
 // both must be set before the first import. A fresh temp dir per test file run keeps this
-// completely isolated from the real ~/.devnull and from any other test file's workspace.
-const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "devnull-projectstore-"));
-process.env.DEVNULL_PROJECTS_ROOT = path.join(tmpRoot, "workspace");
-process.env.DEVNULL_PROJECTS_STORE = path.join(tmpRoot, "projects.json");
+// completely isolated from the real ~/.xcoder and from any other test file's workspace.
+const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-projectstore-"));
+process.env.XCODER_PROJECTS_ROOT = path.join(tmpRoot, "workspace");
+process.env.XCODER_PROJECTS_STORE = path.join(tmpRoot, "projects.json");
 
 const {
   PROJECTS_ROOT,
@@ -26,7 +26,7 @@ const USER_A = "user-a-11111111";
 const USER_B = "user-b-22222222";
 
 function resetStore() {
-  fs.rmSync(process.env.DEVNULL_PROJECTS_STORE!, { force: true });
+  fs.rmSync(process.env.XCODER_PROJECTS_STORE!, { force: true });
   fs.rmSync(PROJECTS_ROOT, { recursive: true, force: true });
 }
 

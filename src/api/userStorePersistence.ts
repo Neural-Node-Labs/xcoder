@@ -27,7 +27,7 @@ import { StoredUser } from "./auth.js";
  * state for a horizontally-scaled deployment.
  */
 
-const STORE_PATH = process.env.DEVNULL_USERS_STORE || path.join(os.homedir(), ".devnull", "users.json");
+const STORE_PATH = process.env.XCODER_USERS_STORE || path.join(os.homedir(), ".xcoder", "users.json");
 
 export function loadPersistedUsers(): StoredUser[] {
   if (!fs.existsSync(STORE_PATH)) return [];

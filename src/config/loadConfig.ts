@@ -7,7 +7,7 @@ import { resolveFirstExistingPath } from "./paths.js";
 
 /**
  * Konpigurasyon ng LLM backend — ang tanging pinagmumulan ng katotohanan kung aling
- * provider ang kinakausap ng devnull.
+ * provider ang kinakausap ng xcoder.
  *
  * - Tinutukoy ng `provider` ang aktibong backend: `"anthropic"` o kahit anong provider
  *   na OpenAI-compatible (`"deepseek"`, `"openai"`, `"openrouter"`, `"groq"`, `"ollama"`,
@@ -85,7 +85,7 @@ export function resolveOpenAiEndpoint(config: Pick<LlmConfig, "endpoint">): stri
 
 /**
  * Rine-resolba ang direktoryo ng "agent/" na naglalaman ng config/llm.yaml, sa pamamagitan ng
- * pagsuri sa mga candidate na ito nang may priyoridad: DEVNULL_HOME env var > current working
+ * pagsuri sa mga candidate na ito nang may priyoridad: XCODER_HOME env var > current working
  * directory > home directory ng user > app/source directory. Kinokonsumo ang shared na
  * candidate-search resolver sa src/config/paths.ts sa halip na magpanatili ng sarili nitong
  * kopya ng logic na ito (dating dalawang beses na na-duplicate dito, na naiba pa sa priyoridad

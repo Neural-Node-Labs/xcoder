@@ -54,7 +54,7 @@ export function createRouter(): Router {
   /**
    * Resolves which directory a task should run against: the explicitly requested project, else
    * the currently active project, else the server's own cwd as a legacy fallback for anyone
-   * running devnull without ever having added a project. Previously this was just hardcoded to
+   * running xcoder without ever having added a project. Previously this was just hardcoded to
    * process.cwd() everywhere, silently ignoring whatever the user had picked in the Projects UI.
    */
   /**
@@ -170,7 +170,7 @@ export function createRouter(): Router {
       status: "ok",
       version: pkg.version ?? "0.1.0",
       uptime: process.uptime(),
-      mockLlm: /^(1|true)$/i.test(process.env.DEVNULL_MOCK_LLM ?? ""),
+      mockLlm: /^(1|true)$/i.test(process.env.XCODER_MOCK_LLM ?? ""),
     };
     const body: ApiResponse<HealthResponse> = { success: true, data };
     res.json(body);

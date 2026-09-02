@@ -14,7 +14,7 @@ import { AutoMockLlmClient } from "./mockClient.js";
 /**
  * Pinanatili ang pangalan ng klase bilang DeepSeekClient para sa backward compatibility sa mga
  * umiiral nang import (CLI, API routes, tests) kahit na generic na provider-routing client na
- * ito ngayon — ang DeepSeek ang default backend ng devnull, pero ang `config.provider` (at ang
+ * ito ngayon — ang DeepSeek ang default backend ng xcoder, pero ang `config.provider` (at ang
  * `config.fallback.provider`) ang tumutukoy kung aling shape ang talagang gagamitin para sa
  * primary call AT sa fallback, kaya ang alinman sa dalawa ay maaaring DeepSeek, Anthropic, o
  * mapagpalit sa pagitan ng dalawa sa pamamagitan lamang ng llm.yaml nang walang pagbabago sa code.
@@ -294,7 +294,7 @@ export class DeepSeekClient implements LlmClient {
  * OpenAI-compatible provider batay sa config), pero nagbibigay sa mga caller ng matatag na
  * factory na maaaring gamitin kung sakaling kailanganin ang provider-specific na client.
  *
- * `opts.mock: true` (o ang DEVNULL_MOCK_LLM=1/true env var, kapag hindi tahasang ibinigay ang
+ * `opts.mock: true` (o ang XCODER_MOCK_LLM=1/true env var, kapag hindi tahasang ibinigay ang
  * `opts.mock`) ay nagbabalik ng AutoMockLlmClient sa halip — WALANG tunay na koneksyon sa
  * network, WALANG kailangang api_key_env, gumagana sa alinmang gawain nang walang scripting.
  * Ito ang tanging lugar kung saan dapat mag-branch ang mock-vs-real na desisyon; ang lahat ng
@@ -307,7 +307,7 @@ export function createLlmClient(
   skillName?: string,
   opts?: { mock?: boolean }
 ): LlmClient {
-  const mock = opts?.mock ?? /^(1|true)$/i.test(process.env.DEVNULL_MOCK_LLM ?? "");
+  const mock = opts?.mock ?? /^(1|true)$/i.test(process.env.XCODER_MOCK_LLM ?? "");
   if (mock) return new AutoMockLlmClient();
   return new DeepSeekClient(config, telemetry, skillName);
 }

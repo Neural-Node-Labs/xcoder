@@ -7,7 +7,7 @@ export interface ValidationResult {
 }
 
 /**
- * Independiyenteng verification pass ("ibang agent" ayon sa ReAct Validation phase / devnull.md
+ * Independiyenteng verification pass ("ibang agent" ayon sa ReAct Validation phase / xcoder.md
  * "Verification Before Done"). Ang tawag na ito ay HINDI binibigyan ng mga tool at WALANG
  * conversation history mula sa gawain mismo — task lamang, ang hilaw na observation transcript,
  * at ang inaangkin na huling sagot. Mahalaga ang paghihiwalay na ito: hindi ito makokombinsing

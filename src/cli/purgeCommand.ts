@@ -20,8 +20,8 @@ export interface PurgeCommandOutcome {
 }
 
 /**
- * Iisang shared handler para sa parehong `devnull purge [options]` at ang legacy
- * `devnull --purge [...]` flag para hindi magkalayo ang dalawang pagbaybay.
+ * Iisang shared handler para sa parehong `xcoder purge [options]` at ang legacy
+ * `xcoder --purge [...]` flag para hindi magkalayo ang dalawang pagbaybay.
  *
  * Ini-print nito mismo ang mga resulta; kailangan lamang ng caller ang na-compute na
  * exit code. Ang mga dry-run ay hindi kailanman nagta-tanong o nag-de-delete. Ang mga
@@ -78,9 +78,9 @@ export async function runPurgeCommand(args: PurgeCommandArgs): Promise<PurgeComm
 }
 
 /**
- * Nagpaparehistro ng `devnull purge` subcommand sa ibinigay na Commander program.
+ * Nagpaparehistro ng `xcoder purge` subcommand sa ibinigay na Commander program.
  * Ang subcommand ay mananaig kaysa sa parent na `[task]` positional para sa eksaktong
- * token na `purge`, habang ang mga multi-word na naka-quote na task (`devnull "purge my notes"`)
+ * token na `purge`, habang ang mga multi-word na naka-quote na task (`xcoder "purge my notes"`)
  * ay dumadaan pa rin sa parent ReAct path.
  */
 export function registerPurgeSubcommand<T extends Command>(program: T, defaults?: { cwd?: string }): T {

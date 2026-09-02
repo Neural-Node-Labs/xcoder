@@ -8,7 +8,7 @@ import * as os from "node:os";
  * Dati, ang sshTool.ts at sshConnection.ts ay parehong nagpapasa ng `hostVerifier: () => true`
  * o ganap na inaalis ang host verification — ibig sabihin ay tinatanggap ng ssh2 ang *anumang*
  * host key para sa *anumang* host, nang tahimik. Iniiwan nito ang mga password-auth na SSH
- * connection na bukas sa man-in-the-middle: isang umaatake na nakaupo sa pagitan ng devnull at
+ * connection na bukas sa man-in-the-middle: isang umaatake na nakaupo sa pagitan ng xcoder at
  * ng target host ay maaaring magpakita ng sarili nilang key at hindi mapapansin ng magkabilang
  * panig.
  *
@@ -20,7 +20,7 @@ import * as os from "node:os";
  * (kung kaya't burahin ang lumang entry) o may humahadlang sa koneksyon.
  */
 
-const STORE_DIR = path.join(os.homedir(), ".devnull");
+const STORE_DIR = path.join(os.homedir(), ".xcoder");
 const STORE_PATH = path.join(STORE_DIR, "known_hosts.json");
 
 interface KnownHostsFile {

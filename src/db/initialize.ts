@@ -1,5 +1,5 @@
 /**
- * Centralized database initialization for the devnull API server and CLI.
+ * Centralized database initialization for the xcoder API server and CLI.
  *
  * Creates all required tables and runs pending migrations so that stores
  * can assume the database is fully initialized. This replaces the per-store
@@ -12,7 +12,7 @@
  *   // db is ready — pass to stores
  *
  * CLI usage:
- *   devnull --initialize-db
+ *   xcoder --initialize-db
  */
 
 import { createConnection } from "./connection.js";

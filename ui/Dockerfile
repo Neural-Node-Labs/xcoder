@@ -1,6 +1,6 @@
-# ─── devnull dashboard image ─────────────────────────────────────────────────
+# ─── xcoder dashboard image ─────────────────────────────────────────────────
 # Multi-stage build: compile the Vite/React app, then serve the static bundle
-# with nginx, proxying /api to the devnull API container.
+# with nginx, proxying /api to the xcoder API container.
 
 # --- Build stage -------------------------------------------------------------
 FROM node:20-slim AS build

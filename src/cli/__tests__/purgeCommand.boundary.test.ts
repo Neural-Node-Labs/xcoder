@@ -10,7 +10,7 @@ import { PURGE_TARGETS } from "../purge.js";
 let tmpRoot: string;
 
 beforeEach(() => {
-  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "devnull-purge-boundary-"));
+  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-purge-boundary-"));
 });
 
 afterEach(() => {
@@ -30,8 +30,8 @@ function makeTargets(root: string): void {
  */
 function installedProgram(tmp = tmpRoot): Command {
   const program = new Command()
-    .name("devnull")
-    .description("devnull")
+    .name("xcoder")
+    .description("xcoder")
     .version("0.1.0")
     .showHelpAfterError()
     .exitOverride();
@@ -62,7 +62,7 @@ async function parsePurge(program: Command, args: string[]): Promise<ParseOutcom
   console.error = (...a: unknown[]) => stderr.push(a.map(String).join(" "));
   let error: { exitCode?: number; code?: string } | undefined;
   try {
-    await program.parseAsync(["node", "devnull", ...args]);
+    await program.parseAsync(["node", "xcoder", ...args]);
   } catch (err) {
     const e = err as { exitCode?: number; code?: string };
     // .exitOverride() turns --help into a thrown CommanderError with exitCode 0.
@@ -100,7 +100,7 @@ describe("runPurgeCommand boundary cases", () => {
 
   it("dry-run still refuses a symlink and exits 1 without touching anything", async () => {
     // Symlink creation requires elevated privileges on Windows (EPERM); skip there.
-    const referent = path.join(tmpRoot, "..", `devnull-purge-ref-${Date.now()}.txt`);
+    const referent = path.join(tmpRoot, "..", `xcoder-purge-ref-${Date.now()}.txt`);
     fs.writeFileSync(referent, "keep");
     try {
       fs.symlinkSync(referent, path.join(tmpRoot, ".agent"), "file");
@@ -198,6 +198,6 @@ describe("purge subcommand dispatch (index.ts registration order)", () => {
     expect(error?.exitCode).toBe(1);
     expect(stderr.toLowerCase()).toContain("unknown option");
     expect(stderr).toContain("--targets");
-    expect(stderr).toContain("Usage: devnull purge");
+    expect(stderr).toContain("Usage: xcoder purge");
   });
 });

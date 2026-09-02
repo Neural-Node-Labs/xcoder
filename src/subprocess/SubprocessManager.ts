@@ -82,7 +82,7 @@ export class SubprocessManager {
     // ── I-fork ang child process ─────────────────────────────────────────────────
     const child: ChildProcess = fork(workerModulePath, [], {
       stdio: ["pipe", "pipe", "pipe", "ipc"],
-      env: { ...process.env, DEVNULL_SUBAGENT: "1" },
+      env: { ...process.env, XCODER_SUBAGENT: "1" },
     });
 
     // ── Estado (State) ─────────────────────────────────────────────────────────────

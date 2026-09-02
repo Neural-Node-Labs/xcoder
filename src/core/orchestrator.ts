@@ -121,7 +121,7 @@ export interface OrchestratorOptions {
    * persistence story ng CLI at ito ay walang kondisyon. Kinokontrol lamang ng flag na ito
    * ang *karagdagang*, database-backed na persistence layer na binabasa ng UI (task history,
    * phase reports, WBS). Tanging src/api/routes.ts lamang ang nagtatakda nito sa true; hindi
-   * kailanman ginagawa ito ng CLI, kaya ang isang `devnull --task "..."` na run ay hindi
+   * kailanman ginagawa ito ng CLI, kaya ang isang `xcoder --task "..."` na run ay hindi
    * kailanman nagbubukas ng koneksyon sa database.
    */
   persistToDb?: boolean;
@@ -146,8 +146,8 @@ const GITHUB_READ_ACTIONS = new Set(["clone", "fetch", "pull", "status"]);
 const VALIDATION_COMMANDS = /\b(test|lint|type-?check|tsc|jest|pytest|kubectl (apply|rollout)|docker build|docker compose|playwright)\b/i;
 
 /**
- * Drives the full ReAct loop with real tool execution, under the devnull.md engineering
- * protocol (Plan Mode, Subagent Strategy, Verification Before Done, etc — see agent/devnull.md):
+ * Drives the full ReAct loop with real tool execution, under the xcoder.md engineering
+ * protocol (Plan Mode, Subagent Strategy, Verification Before Done, etc — see agent/xcoder.md):
  *
  *   Plan Mode (if triggered) -> write tasks/todo.md -> confirm with user before proceeding
  *   Search phase      -> Thought -> Action(glob/grep/read) -> Observation
@@ -575,7 +575,7 @@ export class ReActOrchestrator implements IReactEngine {
 
       if (response.toolCalls.length === 0) {
         // Candidate completion. Before accepting it, run it past an independent validator
-        // (devnull.md "Verification Before Done") unless validation is disabled or exhausted.
+        // (xcoder.md "Verification Before Done") unless validation is disabled or exhausted.
         if (validationEnabled && validatorRejections < maxValidatorRetries) {
           const transcript = buildObservationTranscript(messages);
           if (showConsole && !runOpts.isSubagent) this.io.spinnerStart("Validating completion...");
@@ -1673,7 +1673,7 @@ function safeParse(json: string): unknown {
 function buildSystemPrompt(skills: LoadedSkill[], cwd: string): string {
   const protocol = buildProtocolPrompt(cwd);
 
-const base = `You are devnull, a ReAct CLI agent. You have tools for searching the workspace (glob_tool, grep_tool, read_tool, list_directory_tool, find_files_tool, search_code_tool, search_ast_tool, get_dependency_graph_tool), making changes (write_edit_tool, ssh_tool, github_tool, docker_deploy_ssh_tool, schedule_task_tool), validating your work (run_command_tool, playwright_run_tool), and delegating isolated sub-tasks (subagent_tool). Follow the ReAct pattern: search for context before editing, and always validate your changes before considering a task done. Stop calling tools once the task is verified complete, and summarize what you did.
+const base = `You are xcoder, a ReAct CLI agent. You have tools for searching the workspace (glob_tool, grep_tool, read_tool, list_directory_tool, find_files_tool, search_code_tool, search_ast_tool, get_dependency_graph_tool), making changes (write_edit_tool, ssh_tool, github_tool, docker_deploy_ssh_tool, schedule_task_tool), validating your work (run_command_tool, playwright_run_tool), and delegating isolated sub-tasks (subagent_tool). Follow the ReAct pattern: search for context before editing, and always validate your changes before considering a task done. Stop calling tools once the task is verified complete, and summarize what you did.
 
 A workspace snapshot (file tree, tech stack, git status, package manifest) was already refreshed and is included below as ### Workspace context — you don't need to call workspace_info_tool just to see it. Only call workspace_info_tool(refresh=true) if that snapshot goes stale mid-task (after installing a dependency, creating/deleting files, or switching branches).
 

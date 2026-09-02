@@ -2,7 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import crypto from "node:crypto";
 
 /**
- * Token-based authentication middleware for the devnull API.
+ * Token-based authentication middleware for the xcoder API.
  *
  * The system authenticates against a user store managed by routes.ts.
  * When the user table is empty, the first user to register becomes an admin.
@@ -24,9 +24,9 @@ interface TokenEntry {
   expiresAt: number;
 }
 
-/** How long an issued token remains valid. Override with DEVNULL_TOKEN_TTL_MS for a shorter
+/** How long an issued token remains valid. Override with XCODER_TOKEN_TTL_MS for a shorter
  *  window in higher-security deployments. Default: 7 days. */
-const TOKEN_TTL_MS = Number(process.env.DEVNULL_TOKEN_TTL_MS) > 0 ? Number(process.env.DEVNULL_TOKEN_TTL_MS) : 7 * 24 * 60 * 60 * 1000;
+const TOKEN_TTL_MS = Number(process.env.XCODER_TOKEN_TTL_MS) > 0 ? Number(process.env.XCODER_TOKEN_TTL_MS) : 7 * 24 * 60 * 60 * 1000;
 
 const tokenStore = new Map<string, TokenEntry>();
 
@@ -200,7 +200,7 @@ export function verifyLogin(username: string, password: string): StoredUser | nu
 
 // ─── Rate Limiting ──────────────────────────────────────────────────────────
 //
-// Simple in-memory sliding-window limiter. In-memory is fine for devnull's typical
+// Simple in-memory sliding-window limiter. In-memory is fine for xcoder's typical
 // single-process deployment; a multi-instance deployment behind a load balancer would need a
 // shared store (Redis, etc.) instead — same caveat as the token store, see auth.ts's module
 // doc comment and the security review notes.
@@ -224,8 +224,8 @@ const RATE_LIMIT_MAX_ATTEMPTS = 10;
 // noisy-neighbor / cost-exhaustion vector against every other tenant, not just themselves.
 // Tunable independently of the login limiter since "how many tasks is reasonable per hour"
 // is a very different number from "how many login attempts is reasonable per 15 minutes."
-const TASK_RATE_LIMIT_WINDOW_MS = Number(process.env.DEVNULL_TASK_RATE_WINDOW_MS) > 0 ? Number(process.env.DEVNULL_TASK_RATE_WINDOW_MS) : 60 * 60 * 1000; // 1 hour
-const TASK_RATE_LIMIT_MAX = Number(process.env.DEVNULL_TASK_RATE_MAX) > 0 ? Number(process.env.DEVNULL_TASK_RATE_MAX) : 30; // 30 task submissions/hour/user by default
+const TASK_RATE_LIMIT_WINDOW_MS = Number(process.env.XCODER_TASK_RATE_WINDOW_MS) > 0 ? Number(process.env.XCODER_TASK_RATE_WINDOW_MS) : 60 * 60 * 1000; // 1 hour
+const TASK_RATE_LIMIT_MAX = Number(process.env.XCODER_TASK_RATE_MAX) > 0 ? Number(process.env.XCODER_TASK_RATE_MAX) : 30; // 30 task submissions/hour/user by default
 
 /**
  * Records an attempt for `key` and returns whether the caller is currently rate-limited.

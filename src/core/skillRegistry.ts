@@ -50,7 +50,7 @@ export class SkillRegistry {
     this.skillDir = cwdSkills;
   }
 
-  /** Scan and parse headers only — cheap, safe to call often (e.g. on devnull --index). */
+  /** Scan and parse headers only — cheap, safe to call often (e.g. on xcoder --index). */
   loadHeaders(): SkillHeader[] {
     this.headers.clear();
     this.paths.clear();
@@ -98,7 +98,7 @@ export class SkillRegistry {
   /**
    * Route a task description to candidate skills by trigger-keyword match.
    * Returns skills ranked by match count, highest first. Multiple skills may
-   * be selected — devnull composes them (see composes_with in each header).
+   * be selected — xcoder composes them (see composes_with in each header).
    */
   route(taskDescription: string): SkillHeader[] {
     if (this.headers.size === 0) this.loadHeaders();

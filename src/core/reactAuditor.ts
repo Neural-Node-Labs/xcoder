@@ -12,7 +12,7 @@ export interface ReactAuditScenario {
   description: string;
   /** Writes the buggy fixture files into the scenario's temp workspace. */
   setup: (dir: string) => void;
-  /** The task instruction devnull is given — this is what triggers the ReAct loop. */
+  /** The task instruction xcoder is given — this is what triggers the ReAct loop. */
   task: string;
   /**
    * Independent check of whether the bug is ACTUALLY fixed — runs real code and inspects
@@ -66,7 +66,7 @@ const SUCCESS_WORDS = /\bfixed\b|\bcomplete\b|\bdone\b|\bresolved\b|\bworks?\b|v
 /**
  * Runs the built-in battery of bug-fixing scenarios (or a caller-supplied set) through the
  * real ReActOrchestrator, using the real dispatched tools and the real goal validator — the
- * exact same code path a live `devnull --task` run uses. Produces a structured + markdown
+ * exact same code path a live `xcoder --task` run uses. Produces a structured + markdown
  * report on: did it actually fix the bug (independently verified), did it search before
  * editing, did it validate before declaring done, did the goal validator catch anything, and
  * how many LLM calls it took.
@@ -77,7 +77,7 @@ export async function auditReactLoop(
   scenarios: ReactAuditScenario[] = defaultScenarios(),
   opts: { baseDir?: string; maxIterations?: number } = {}
 ): Promise<AuditReport> {
-  const baseDir = opts.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "devnull-react-audit-"));
+  const baseDir = opts.baseDir ?? fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-react-audit-"));
   const results: ScenarioResult[] = [];
 
   for (const scenario of scenarios) {

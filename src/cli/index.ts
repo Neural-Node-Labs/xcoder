@@ -41,7 +41,7 @@ import os from "node:os";
 installProcessCrashHandler(process.cwd());
 
 const program = new Command();
-program.name("devnull").description("devnull — ReAct CLI agent na may hot-pluggable role skills").version("0.1.0");
+program.name("xcoder").description("xcoder — ReAct CLI agent na may hot-pluggable role skills").version("0.1.0");
 program.showHelpAfterError();
 registerPurgeSubcommand(program);
 
@@ -51,28 +51,28 @@ program
   .option("--task <description>", "isagawa ang isang solong gawain, humihingi ng paglilinaw kung kailangan")
   .option("--index", "i-index ang kasalukuyang workspace patungo sa .agent/index/")
   .option("--skills", "ilista ang lahat ng na-load na skill at ang kanilang mga trigger keyword")
-  .option("--lesson <text>", "magtala ng aral sa .agent/lessons.md (tingnan ang Self-Improvement Loop sa devnull.md)")
+  .option("--lesson <text>", "magtala ng aral sa .agent/lessons.md (tingnan ang Self-Improvement Loop sa xcoder.md)")
   .option("--plan", "pilitin ang Plan Mode na naka-on, anuman ang complexity heuristic ng gawain")
   .option("--no-plan", "pilitin ang Plan Mode na naka-off, anuman ang complexity heuristic ng gawain")
   .option("--full-context-token", "panatilihin ang bawat historical na kopya ng read_tool file snapshot sa context sa halip na i-collapse ang mga luma na (tingnan ang src/core/contextCompaction.ts); default: naka-off, naka-on ang lean-token compaction")
   .option("--single-phase", "i-disable ang phase-based na pagpaplano at tumakbo bilang isang solong ReAct loop; default: naka-ON ang phase-planning")
   .option("--auto", "ganap na autonomous mode — awtomatikong sumasagot ng 'yes' sa LAHAT ng interactive prompt (plan approval, phase plan approval, iteration limit continuation, subagent continuation). Pinapatakbo ng LLM ang buong proseso mula simula hanggang tapos nang walang anumang interbensyon ng tao. Gamitin ito para sa CI/CD, awtomatikong testing, o anumang sitwasyon kung saan gusto ng zero na human input.")
   .option("--isolated-workspace", "patakbuhin ang mga tool operation laban sa isang isolated na ./workspace-agent na kopya sa halip na ang live na project file (tingnan ang src/core/workspaceManager.ts); default: naka-off")
-  .option("--mock", "patakbuhin gamit ang isang mock na LLM connection sa halip na tunay — walang kailangang API key, walang tunay na network call. Kapaki-pakinabang para sa pag-eksplora ng platform, demo, o mabilisang smoke test. Tingnan ang src/llm/mockClient.ts (AutoMockLlmClient). Katumbas ng DEVNULL_MOCK_LLM=1 para sa --serve/--ui.")
+  .option("--mock", "patakbuhin gamit ang isang mock na LLM connection sa halip na tunay — walang kailangang API key, walang tunay na network call. Kapaki-pakinabang para sa pag-eksplora ng platform, demo, o mabilisang smoke test. Tingnan ang src/llm/mockClient.ts (AutoMockLlmClient). Katumbas ng XCODER_MOCK_LLM=1 para sa --serve/--ui.")
   .option("--verbose", "i-print ang karagdagang detalye: isang startup banner (engine, provider, model, mock status), at mas mataas na truncation limit sa thought/action/observation console output (tingnan ang src/cli/consoleReporter.ts)")
   .option("--audit-react", "patakbuhin ang built-in na bug-fixing scenario battery sa pamamagitan ng tunay na orchestrator at mag-ulat kung paano ito nagperform")
   .option("--audit-out <path>", "kung saan isusulat ang audit report markdown (default: .agent/reports/react-audit-<timestamp>.md)")
   .option("--diagnose-live", "patakbuhin ang 7-point na ReAct diagnostic suite laban sa tunay na naka-configure na LLM: iteration stopping, restart-approval, pag-iwas sa duplicate-action, paggamit ng tool/skill, ground-up deployable app, bug fixing, at buong SDLC")
   .option("--diagnose-out <path>", "kung saan isusulat ang live diagnostics report markdown (default: .agent/reports/live-diagnostics-<timestamp>.md)")
-  .option("--serve", "simulan ang devnull HTTP API server")
-  .option("--ui", "simulan ang parehong devnull HTTP API server at ang UI frontend")
+  .option("--serve", "simulan ang xcoder HTTP API server")
+  .option("--ui", "simulan ang parehong xcoder HTTP API server at ang UI frontend")
   .option("--port <number>", "port para sa API server (default: 3001)", parseInt)
   .option("--host <address>", "host para sa API server (default: 0.0.0.0)")
   .option("--deploy", "i-trigger ang deploy mode — pinapatakbo ang docker compose up -d --build")
   .option("--docker", "gamitin ang docker compose para sa deployment (implied ng --deploy)")
   .option("--llm <boolean>", "kung true, ipadala ang deploy task sa LLM bilang devops task; kung false, direktang isagawa (default: false)", (v) => v === "true" || v === "1")
   .option("--remote <ip>", "IP ng remote host na de-deploy-han (gumagamit ng REMOTE_SSH_USER at REMOTE_SSH_PASSWORD mula sa .env)")
-  .option("--remote-path <path>", "remote directory path para sa deployment (default: /opt/devnull)")
+  .option("--remote-path <path>", "remote directory path para sa deployment (default: /opt/xcoder)")
   .option("--engine <name>", `orchestration engine na gagamitin (default: "${DEFAULT_ENGINE}"). Mga nakarehistrong engine: ${listEngines().join(", ")}. Tingnan ang src/core/engine/EngineRegistry.ts para magrehistro ng ibang implementation.`, DEFAULT_ENGINE)
   .option("--react", `gamitin ang reference ReAct engine (katumbas ng --engine react)`)
   .option("--lean", "gamitin ang LeanEngine — isang focused, self-contained na ReAct loop na may cancellation, progress observer, at self-healing health scoring (katumbas ng --engine lean)")
@@ -83,7 +83,7 @@ program
   .option("--procedure", "gamitin ang ProcedureEngine — dalawang-hakbang na procedure generation kasama ang local step execution (katumbas ng --engine procedure)")
   .option("--sdlc", "gamitin ang SdlcEngine — DAG-based na SDLC orchestration: intake classification sa pamamagitan ng rule table, linear na stage pipeline, at isang Validation Gate na independiyenteng sumusuri sa bawat stage bago ito payagang sumulong, may bounded healing at escalation (katumbas ng --engine sdlc; default)")
   .option("--initialize-db", "i-initialize ang PostgreSQL database (gumawa ng mga talahanayan, patakbuhin ang mga migration). Idempotent — ligtas patakbuhin nang paulit-ulit.")
-  .option("--purge", "alisin ang agent-internal na metadata at mga likhang artifact (.agent/, kasama ang tasks/, logs/, index/, plans/, reports/ nito) mula sa workspace (tingnan din ang `devnull purge --help`)")
+  .option("--purge", "alisin ang agent-internal na metadata at mga likhang artifact (.agent/, kasama ang tasks/, logs/, index/, plans/, reports/ nito) mula sa workspace (tingnan din ang `xcoder purge --help`)")
   .option("--purge-scope <scope>", "saklaw para sa --purge: 'workspace' (default) o 'global' (os.homedir())")
   .option("--purge-targets <list>", "comma-separated na subset ng mga target na pu-purgahin (default: .agent)")
   .option("--purge-dry-run", "kasama ng --purge: i-print kung ano ang aalisin nang hindi tinatanggal ang anuman")
@@ -100,7 +100,7 @@ program
     // Kapag --mock ang ginamit kasabay ng --serve/--ui, ipasa ang mock mode papunta sa
     // long-running na API server sa pamamagitan ng env var, dahil ang mga request nito ay
     // hindi dumadaan sa parehong per-invocation na `opts` na ito.
-    if (opts.mock) process.env.DEVNULL_MOCK_LLM = "1";
+    if (opts.mock) process.env.XCODER_MOCK_LLM = "1";
 
     // ─── I-initialize ang Database ──────────────────────────────────────────
     if (opts.initializeDb) {
@@ -119,7 +119,7 @@ program
     }
 
     // ─── Purge ─────────────────────────────────────────────────────────────
-    // Ang parehong pagbaybay ("devnull purge" at "devnull --purge") ay dumadaan sa
+    // Ang parehong pagbaybay ("xcoder purge" at "xcoder --purge") ay dumadaan sa
     // parehong shared handler para hindi maghiwalay ang legacy flag mula sa subcommand.
     if (opts.purge) {
       const outcome = await runPurgeCommand({
@@ -210,13 +210,13 @@ program
       const port = opts.port || 3001;
       const host = opts.host || "0.0.0.0";
 
-      console.log("🚀 Sinisimulan ang devnull API server at UI frontend...\n");
+      console.log("🚀 Sinisimulan ang xcoder API server at UI frontend...\n");
 
       // 1. Simulan ang API server
       startApiServer({ port, host });
 
       // 2. Alamin ang UI path (ipinapalagay na nasa 'ui' o root ang UI package/folder)
-      const uiDir = path.resolve(cwd, "ui"); // ayusin ang path patungo sa kinaroroonan ng devnull-ui
+      const uiDir = path.resolve(cwd, "ui"); // ayusin ang path patungo sa kinaroroonan ng xcoder-ui
 
       if (!fs.existsSync(uiDir)) {
         console.error(`❌ Hindi nahanap ang UI directory sa: ${uiDir}`);
@@ -250,8 +250,8 @@ program
 
     // ─── Deploy Mode ────────────────────────────────────────────────────────
     // Paggamit:
-    //   Lokal:  devnull --deploy --docker --llm true|false
-    //   Remote: devnull --deploy --docker --remote <ip> [--llm true|false]
+    //   Lokal:  xcoder --deploy --docker --llm true|false
+    //   Remote: xcoder --deploy --docker --remote <ip> [--llm true|false]
     //
     //   --llm true  → ipadala ang deploy task sa LLM bilang devops task (nilulutas ang mga isyu)
     //   --llm false → direktang isagawa ang deploy
@@ -264,7 +264,7 @@ program
         // ── Remote Deploy ────────────────────────────────────────────────
         const remoteUser = (process.env.REMOTE_SSH_USER || "").trim();
         const remotePassword = process.env.REMOTE_SSH_PASSWORD;
-        const remotePath = (opts.remotePath as string) || "/opt/devnull";
+        const remotePath = (opts.remotePath as string) || "/opt/xcoder";
 
         if (!remoteUser || !remotePassword) {
           console.error("❌ Dapat naka-set ang REMOTE_SSH_USER at REMOTE_SSH_PASSWORD sa .env para sa remote deployment.");
@@ -277,7 +277,7 @@ program
           const engine = createEngine(engineName, { llm, telemetry, io, options: { cwd, planMode: "always" } });
           console.log(`🚀 Remote deploy mode: ipinapadala sa LLM bilang devops task (target: ${remoteHost})...\n`);
           await engine.run(
-            `Deploy the devnull stack to remote host ${remoteHost} via SSH. ` +
+            `Deploy the xcoder stack to remote host ${remoteHost} via SSH. ` +
             `Use the docker_deploy_ssh_tool with host="${remoteHost}", user="${remoteUser}", ` +
             `passwordEnvVar="REMOTE_SSH_PASSWORD", remotePath="${remotePath}". ` +
             `If the build or deployment fails, diagnose and fix any issues. ` +
@@ -315,7 +315,7 @@ program
         const engine = createEngine(engineName, { llm, telemetry, io, options: { cwd, planMode: "always" } });
         console.log("🚀 Deploy mode: ipinapadala sa LLM bilang devops task...\n");
         await engine.run(
-          "Deploy the devnull stack using docker compose. " +
+          "Deploy the xcoder stack using docker compose. " +
           "Run `docker compose up -d --build` in the project root. " +
           "If the build or deployment fails, diagnose and fix any issues. " +
           "Verify all containers are healthy after deployment. " +
@@ -372,7 +372,7 @@ program
 
 async function chatLoop(engine: IReactEngine): Promise<void> {
   const rl = readline.createInterface({ input, output });
-  console.log("devnull chat mode. I-type ang 'quit', 'exit', o 'bye' para umalis.");
+  console.log("xcoder chat mode. I-type ang 'quit', 'exit', o 'bye' para umalis.");
 
   while (true) {
     const line = await rl.question("\n> ");

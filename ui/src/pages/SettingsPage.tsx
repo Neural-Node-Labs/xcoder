@@ -76,7 +76,7 @@ export function SettingsPage() {
         <div className="card-title">Platform status</div>
         {health?.mockLlm && (
           <div className="badge badge-amber" style={{ display: "flex", marginBottom: 14 }}>
-            ⚠ Running with a MOCK LLM connection (DEVNULL_MOCK_LLM) — every task result is
+            ⚠ Running with a MOCK LLM connection (XCODER_MOCK_LLM) — every task result is
             simulated, not a real model response.
           </div>
         )}

@@ -348,11 +348,11 @@ const NETWORK_FETCH_TOOLS = new Set([
 ]);
 
 function disabledToolReason(name: string): string | undefined {
-  if (SHELL_AND_REMOTE_EXEC_TOOLS.has(name) && /^(1|true)$/i.test(process.env.DEVNULL_DISABLE_SHELL_TOOLS ?? "")) {
-    return `${name} is disabled on this server (DEVNULL_DISABLE_SHELL_TOOLS is set) — shell/remote-execution tools are unavailable until per-tenant sandboxing is configured.`;
+  if (SHELL_AND_REMOTE_EXEC_TOOLS.has(name) && /^(1|true)$/i.test(process.env.XCODER_DISABLE_SHELL_TOOLS ?? "")) {
+    return `${name} is disabled on this server (XCODER_DISABLE_SHELL_TOOLS is set) — shell/remote-execution tools are unavailable until per-tenant sandboxing is configured.`;
   }
-  if (NETWORK_FETCH_TOOLS.has(name) && /^(1|true)$/i.test(process.env.DEVNULL_DISABLE_NETWORK_TOOLS ?? "")) {
-    return `${name} is disabled on this server (DEVNULL_DISABLE_NETWORK_TOOLS is set) — outbound-network tools are unavailable on this deployment.`;
+  if (NETWORK_FETCH_TOOLS.has(name) && /^(1|true)$/i.test(process.env.XCODER_DISABLE_NETWORK_TOOLS ?? "")) {
+    return `${name} is disabled on this server (XCODER_DISABLE_NETWORK_TOOLS is set) — outbound-network tools are unavailable on this deployment.`;
   }
   return undefined;
 }
@@ -406,7 +406,7 @@ export async function dispatchToolCall(call: ToolCall, cwd: string = process.cwd
         }
 case "conversation_tool": {
           // Print the response directly to the console so the user sees it immediately
-          console.log(`\n🤖 devnull: ${args.reply}`);
+          console.log(`\n🤖 xcoder: ${args.reply}`);
 
           return {
             toolCallId: call.id,
@@ -511,7 +511,7 @@ case "conversation_tool": {
             toolName: name,
             observation: {
               error:
-                "No remote fleet configured. Set DEVNULL_SSH_TARGETS (and DEVNULL_SSH_USER/DEVNULL_SSH_PASSWORD) to use ssh_copy_tool.",
+                "No remote fleet configured. Set XCODER_SSH_TARGETS (and XCODER_SSH_USER/XCODER_SSH_PASSWORD) to use ssh_copy_tool.",
             },
             isError: true,
           };
@@ -527,7 +527,7 @@ case "conversation_tool": {
             toolName: name,
             observation: {
               error:
-                "No remote fleet configured. Set DEVNULL_SSH_TARGETS (and DEVNULL_SSH_USER/DEVNULL_SSH_PASSWORD) to use ssh_run_command.",
+                "No remote fleet configured. Set XCODER_SSH_TARGETS (and XCODER_SSH_USER/XCODER_SSH_PASSWORD) to use ssh_run_command.",
             },
             isError: true,
           };

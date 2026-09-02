@@ -22,7 +22,7 @@ import {
 
 // ─── Constants ────────────────────────────────────────────────────────────────────
 
-const DEFAULT_SYSTEM_PROMPT = `You are devnull, a ReAct CLI agent. You have tools for searching the workspace
+const DEFAULT_SYSTEM_PROMPT = `You are xcoder, a ReAct CLI agent. You have tools for searching the workspace
 (glob_tool, grep_tool, read_tool, list_directory_tool, find_files_tool, search_code_tool, search_ast_tool, get_dependency_graph_tool), making changes (write_edit_tool, ssh_tool, github_tool,
 docker_deploy_ssh_tool, schedule_task_tool), validating your work (run_command_tool,
 playwright_run_tool), and delegating isolated sub-tasks (subagent_tool). Follow the ReAct

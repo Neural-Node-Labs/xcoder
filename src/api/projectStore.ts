@@ -13,7 +13,7 @@ export interface StoredProject {
   createdAt: string;
 }
 
-const STORE_PATH = process.env.DEVNULL_PROJECTS_STORE || path.join(os.homedir(), ".devnull", "projects.json");
+const STORE_PATH = process.env.XCODER_PROJECTS_STORE || path.join(os.homedir(), ".xcoder", "projects.json");
 
 /**
  * Every project workspace lives under this single, guaranteed-writable root instead of
@@ -31,11 +31,11 @@ const STORE_PATH = process.env.DEVNULL_PROJECTS_STORE || path.join(os.homedir(),
  * read/write; the directory layout enforces it again at the filesystem level as a second,
  * independent line of defense.
  *
- * Override with DEVNULL_PROJECTS_ROOT if projects should live somewhere else (e.g. a mounted
+ * Override with XCODER_PROJECTS_ROOT if projects should live somewhere else (e.g. a mounted
  * volume in production). Defaults to ./workspace relative to the server's cwd.
  */
 export const PROJECTS_ROOT = path.resolve(
-  process.env.DEVNULL_PROJECTS_ROOT || path.join(process.cwd(), "workspace")
+  process.env.XCODER_PROJECTS_ROOT || path.join(process.cwd(), "workspace")
 );
 
 /** The root directory for a single user's projects: PROJECTS_ROOT/<userId>. */

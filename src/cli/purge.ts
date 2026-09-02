@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 
 /**
- * `devnull purge` — nag-aalis ng agent-internal na metadata at mga likhang artifact mula sa
+ * `xcoder purge` — nag-aalis ng agent-internal na metadata at mga likhang artifact mula sa
  * isang workspace.
  *
  * Ang target set ay kinukuha mula sa `EXCLUDED` set sa `src/core/workspaceManager.ts`, na
@@ -30,7 +30,7 @@ import os from "node:os";
  *     workspace ay isang no-op.
  */
 
-/** Ang tanging direktoryong inaalis ng `devnull purge`. Sinasalamin ang purge-relevant na subset ng `EXCLUDED`. */
+/** Ang tanging direktoryong inaalis ng `xcoder purge`. Sinasalamin ang purge-relevant na subset ng `EXCLUDED`. */
 export const PURGE_TARGETS = [".agent"] as const;
 
 export type PurgeScope = "workspace" | "global";

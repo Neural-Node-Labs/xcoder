@@ -666,7 +666,7 @@ export class SwarmEngine implements IReactEngine, IReactEngineV2 {
   private buildSwarmSystemPrompt(skills: LoadedSkill[], taskDescription: string): string {
     const protocol = buildProtocolPrompt(this.cwd);
 
-    const base = `You are the Orchestrator of a Swarm Orchestration Engine for devnull. A Work Breakdown Structure (WBS) has already been generated and is tracked internally as a set of tasks with dependencies. Your job is to drive those tasks to completion:
+    const base = `You are the Orchestrator of a Swarm Orchestration Engine for xcoder. A Work Breakdown Structure (WBS) has already been generated and is tracked internally as a set of tasks with dependencies. Your job is to drive those tasks to completion:
 
 - Tasks with no unmet dependencies are auto-dispatched to swarm agents before each of your turns — you don't need to manually start every task yourself.
 - Use swarm_check_status_tool to see the current status of all tasks.

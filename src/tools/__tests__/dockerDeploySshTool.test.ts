@@ -28,11 +28,11 @@ function buildDockerCommand(
 }
 
 function buildRollbackSnapshotCommand(remotePath: string): string {
-  return `cd ${remotePath} && (docker compose ps --format json 2>/dev/null || echo '{"snapshot":"none"}') > .devnull-rollback-snapshot.json && echo "SNAPSHOT_SAVED"`;
+  return `cd ${remotePath} && (docker compose ps --format json 2>/dev/null || echo '{"snapshot":"none"}') > .xcoder-rollback-snapshot.json && echo "SNAPSHOT_SAVED"`;
 }
 
 function buildRollbackRestoreCommand(remotePath: string): string {
-  return `cd ${remotePath} && if [ -f .devnull-rollback-snapshot.json ]; then echo "Rolling back..."; docker compose down 2>/dev/null; docker compose up -d --build 2>/dev/null || true; echo "ROLLBACK_COMPLETE"; else echo "NO_SNAPSHOT"; fi`;
+  return `cd ${remotePath} && if [ -f .xcoder-rollback-snapshot.json ]; then echo "Rolling back..."; docker compose down 2>/dev/null; docker compose up -d --build 2>/dev/null || true; echo "ROLLBACK_COMPLETE"; else echo "NO_SNAPSHOT"; fi`;
 }
 
 function buildHealthCheckCommand(remotePath: string, composeFile?: string): string {
@@ -157,7 +157,7 @@ describe("buildRollbackSnapshotCommand", () => {
     const cmd = buildRollbackSnapshotCommand("/opt/app");
     assert.include(cmd, "cd /opt/app");
     assert.include(cmd, "docker compose ps --format json");
-    assert.include(cmd, ".devnull-rollback-snapshot.json");
+    assert.include(cmd, ".xcoder-rollback-snapshot.json");
     assert.include(cmd, "SNAPSHOT_SAVED");
   });
 });
@@ -250,15 +250,15 @@ describe("parseServiceStatuses", () => {
 
   it("parses real-world NDJSON output from docker compose ps", () => {
     const ndjson = [
-      JSON.stringify({ Command: "node /opt/devnull/d…", CreatedAt: "2026-07-19 17:56:17 +0000 UTC", ExitCode: 0, Health: "healthy", ID: "abc123", Image: "devnull-api:latest", Labels: "com.docker.compose.project=devnull", LocalVolumes: "0", Mounts: "/root/devnull", Name: "devnull-api", Names: "devnull-api", Networks: "devnull_default", Ports: "0.0.0.0:3001->3001/tcp", Project: "devnull", Publishers: [{ URL: "0.0.0.0", TargetPort: 3001, PublishedPort: 3001, Protocol: "tcp" }], RunningFor: "5 minutes ago", Service: "api", Size: "0B", State: "running", Status: "Up 5 minutes (healthy)" }),
-      JSON.stringify({ Command: "docker-entrypoint.s…", CreatedAt: "2026-07-19 17:55:13 +0000 UTC", ExitCode: 0, Health: "healthy", ID: "def456", Image: "postgres:16-alpine", Labels: "", LocalVolumes: "1", Mounts: "devnull_pgdata", Name: "devnull-postgres", Names: "devnull-postgres", Networks: "devnull_default", Ports: "0.0.0.0:5432->5432/tcp", Project: "devnull", Publishers: [{ URL: "0.0.0.0", TargetPort: 5432, PublishedPort: 5432, Protocol: "tcp" }], RunningFor: "6 minutes ago", Service: "postgres", Size: "0B", State: "running", Status: "Up 6 minutes (healthy)" }),
+      JSON.stringify({ Command: "node /opt/xcoder/d…", CreatedAt: "2026-07-19 17:56:17 +0000 UTC", ExitCode: 0, Health: "healthy", ID: "abc123", Image: "xcoder-api:latest", Labels: "com.docker.compose.project=xcoder", LocalVolumes: "0", Mounts: "/root/xcoder", Name: "xcoder-api", Names: "xcoder-api", Networks: "xcoder_default", Ports: "0.0.0.0:3001->3001/tcp", Project: "xcoder", Publishers: [{ URL: "0.0.0.0", TargetPort: 3001, PublishedPort: 3001, Protocol: "tcp" }], RunningFor: "5 minutes ago", Service: "api", Size: "0B", State: "running", Status: "Up 5 minutes (healthy)" }),
+      JSON.stringify({ Command: "docker-entrypoint.s…", CreatedAt: "2026-07-19 17:55:13 +0000 UTC", ExitCode: 0, Health: "healthy", ID: "def456", Image: "postgres:16-alpine", Labels: "", LocalVolumes: "1", Mounts: "xcoder_pgdata", Name: "xcoder-postgres", Names: "xcoder-postgres", Networks: "xcoder_default", Ports: "0.0.0.0:5432->5432/tcp", Project: "xcoder", Publishers: [{ URL: "0.0.0.0", TargetPort: 5432, PublishedPort: 5432, Protocol: "tcp" }], RunningFor: "6 minutes ago", Service: "postgres", Size: "0B", State: "running", Status: "Up 6 minutes (healthy)" }),
     ].join("\n");
     const services = parseServiceStatuses(ndjson);
     assert.equal(services.length, 2);
-    assert.equal(services[0].name, "devnull-api");
+    assert.equal(services[0].name, "xcoder-api");
     assert.equal(services[0].status, "Up 5 minutes (healthy)");
     assert.equal(services[0].health, "healthy");
-    assert.equal(services[1].name, "devnull-postgres");
+    assert.equal(services[1].name, "xcoder-postgres");
     assert.equal(services[1].status, "Up 6 minutes (healthy)");
     assert.equal(services[1].health, "healthy");
   });

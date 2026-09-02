@@ -1,10 +1,10 @@
 {
-  "name": "devnull",
+  "name": "xcoder",
   "version": "0.1.0",
-  "description": "devnull — a DAG-based SDLC orchestration agent. Ships with a ReAct CLI, an HTTP API, and a web dashboard, with hot-pluggable role skills and a Validation Gate that never trusts a sub-agent's own self-report.",
+  "description": "xcoder — a DAG-based SDLC orchestration agent. Ships with a ReAct CLI, an HTTP API, and a web dashboard, with hot-pluggable role skills and a Validation Gate that never trusts a sub-agent's own self-report.",
   "type": "module",
   "bin": {
-    "devnull": "dist/cli/index.js"
+    "xcoder": "dist/cli/index.js"
   },
   "main": "dist/api/server.js",
   "engines": {

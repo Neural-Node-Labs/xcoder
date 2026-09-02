@@ -213,7 +213,7 @@ async function fetchPage(url: string): Promise<{ title: string; links: string[];
     const res = await fetch(url, {
       signal: controller.signal,
       headers: {
-        "User-Agent": "devnull-site-crawler/1.0",
+        "User-Agent": "xcoder-site-crawler/1.0",
         Accept: "text/html,application/xhtml+xml",
       },
       redirect: "follow",

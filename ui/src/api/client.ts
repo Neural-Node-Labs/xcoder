@@ -1,4 +1,4 @@
-// Typed API client for the devnull backend. Every function returns the unwrapped `data` from
+// Typed API client for the xcoder backend. Every function returns the unwrapped `data` from
 // the ApiResponse<T> envelope, or throws with the server's `error` message on failure.
 
 const BASE = "/api/v1";
@@ -9,12 +9,12 @@ export interface ApiResponse<T = unknown> {
   error?: string;
 }
 
-let authToken: string | null = localStorage.getItem("devnull_token");
+let authToken: string | null = localStorage.getItem("xcoder_token");
 
 export function setAuthToken(token: string | null) {
   authToken = token;
-  if (token) localStorage.setItem("devnull_token", token);
-  else localStorage.removeItem("devnull_token");
+  if (token) localStorage.setItem("xcoder_token", token);
+  else localStorage.removeItem("xcoder_token");
 }
 
 export function getAuthToken() {

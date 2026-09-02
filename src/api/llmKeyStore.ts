@@ -3,7 +3,7 @@ import path from "node:path";
 import os from "node:os";
 import type { LlmConfig } from "../config/loadConfig.js";
 
-const STORE_PATH = path.join(os.homedir(), ".devnull", "llm-key.json");
+const STORE_PATH = path.join(os.homedir(), ".xcoder", "llm-key.json");
 
 export function getStoredApiKey(): string | undefined {
   if (!fs.existsSync(STORE_PATH)) return undefined;

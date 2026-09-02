@@ -26,9 +26,9 @@ COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh
 
 # Runs as a non-root user
-RUN useradd --create-home --shell /bin/bash devnull \
-  && chown -R devnull:devnull /app
-USER devnull
+RUN useradd --create-home --shell /bin/bash xcoder \
+  && chown -R xcoder:xcoder /app
+USER xcoder
 
 EXPOSE 3001
 

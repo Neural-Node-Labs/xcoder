@@ -1,5 +1,5 @@
 /**
- * Centralized migration system for devnull's PostgreSQL database layer.
+ * Centralized migration system for xcoder's PostgreSQL database layer.
  *
  * Migration SQL files live in `migrations/postgres/`. Migrations are
  * tracked in a `_migrations` table so they run exactly once.

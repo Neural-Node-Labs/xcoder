@@ -30,7 +30,7 @@ const VALIDATION_TOOLS = new Set(["playwright_run_tool"]);
 const GITHUB_READ_ACTIONS = new Set(["clone", "fetch", "pull", "status"]);
 const VALIDATION_COMMANDS = /\b(test|lint|type-?check|tsc|jest|pytest|kubectl (apply|rollout)|docker build|docker compose|playwright)\b/i;
 
-const DEFAULT_SYSTEM_PROMPT = `You are devnull, a ReAct CLI agent. You have tools for searching the workspace
+const DEFAULT_SYSTEM_PROMPT = `You are xcoder, a ReAct CLI agent. You have tools for searching the workspace
 (glob_tool, grep_tool, read_tool), making changes (write_edit_tool, ssh_tool, github_tool,
 docker_deploy_ssh_tool, schedule_task_tool), validating your work (run_command_tool,
 playwright_run_tool), and delegating isolated sub-tasks (subagent_tool). Follow the ReAct
@@ -465,7 +465,7 @@ export class LeanEngine implements IReactEngine, IReactEngineV2 {
   private buildSystemPrompt(skills: LoadedSkill[]): string {
     const protocol = buildProtocolPrompt(this.cwd);
 
-const base = `You are devnull, a ReAct CLI agent. You have tools for searching the workspace (glob_tool, grep_tool, read_tool, list_directory_tool, find_files_tool, search_code_tool, search_ast_tool, get_dependency_graph_tool), making changes (write_edit_tool, ssh_tool, github_tool, docker_deploy_ssh_tool, schedule_task_tool), validating your work (run_command_tool, playwright_run_tool), and delegating isolated sub-tasks (subagent_tool). Follow the ReAct pattern: search for context before editing, and always validate your changes before considering a task done. Stop calling tools once the task is verified complete, and summarize what you did.
+const base = `You are xcoder, a ReAct CLI agent. You have tools for searching the workspace (glob_tool, grep_tool, read_tool, list_directory_tool, find_files_tool, search_code_tool, search_ast_tool, get_dependency_graph_tool), making changes (write_edit_tool, ssh_tool, github_tool, docker_deploy_ssh_tool, schedule_task_tool), validating your work (run_command_tool, playwright_run_tool), and delegating isolated sub-tasks (subagent_tool). Follow the ReAct pattern: search for context before editing, and always validate your changes before considering a task done. Stop calling tools once the task is verified complete, and summarize what you did.
 
 A workspace snapshot (file tree, tech stack, git status, package manifest) was already refreshed and is included below as ### Workspace context — you don't need to call workspace_info_tool just to see it. Only call workspace_info_tool(refresh=true) if that snapshot goes stale mid-task (after installing a dependency, creating/deleting files, or switching branches).
 

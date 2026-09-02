@@ -39,7 +39,7 @@ import {
  *
  * What's intentionally NOT carried over (deliberate scope cuts, not oversights):
  * - No separate CLI/server/UI stack, GitHub tools, or Playwright integration -- this engine
- *   plugs into devnull's existing tool registry, LLM client, and IO/telemetry conventions.
+ *   plugs into xcoder's existing tool registry, LLM client, and IO/telemetry conventions.
  * - No parallel swarm dispatch across independent DAG branches -- buildDag() currently
  *   produces a single linear chain, so frontier dispatch is sequential. The frontier-based
  *   run() loop already generalizes to concurrent branches; only buildDag() would need to grow

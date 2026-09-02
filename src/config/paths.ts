@@ -100,7 +100,7 @@ export function ensureAgentSubdirs(projectRoot: string): void {
  * loadConfig.ts) na naiba pa nga sa priyoridad ng kanilang mga candidate at may bug sa fallback
  * (gumagamit ang resolveAgentPath ng maling default constant kapag walang nahanap na candidate).
  *
- * Priyoridad (unang tumugma ang mananaig): DEVNULL_HOME env var > current working directory >
+ * Priyoridad (unang tumugma ang mananaig): XCODER_HOME env var > current working directory >
  * home directory ng user > app/source directory.
  */
 export function resolveFirstExistingPath(relativeSegment: string, opts?: { logResolution?: boolean }): string {
@@ -121,8 +121,8 @@ export function resolveFirstExistingPath(relativeSegment: string, opts?: { logRe
 function buildCandidatePaths(relativeSegment: string): string[] {
   const candidates: string[] = [];
 
-  if (process.env.DEVNULL_HOME) {
-    candidates.push(path.join(process.env.DEVNULL_HOME, relativeSegment));
+  if (process.env.XCODER_HOME) {
+    candidates.push(path.join(process.env.XCODER_HOME, relativeSegment));
   }
   candidates.push(path.join(process.cwd(), relativeSegment));
   candidates.push(path.join(os.homedir(), relativeSegment));

@@ -7,7 +7,7 @@ import { runPurge, normalizeTargets, PURGE_TARGETS } from "../purge.js";
 let tmpRoot: string;
 
 beforeEach(() => {
-  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "devnull-purge-"));
+  tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "xcoder-purge-"));
 });
 
 afterEach(() => {
@@ -71,7 +71,7 @@ describe("runPurge", () => {
   it("refuses symlinks by default and removes them with force", async () => {
     // Symlink creation requires elevated privileges on Windows (EPERM). Skip there rather
     // than fail — the refusal/force logic is exercised on platforms that allow symlinks.
-    const referent = path.join(tmpRoot, "..", `devnull-purge-ref-${Date.now()}.txt`);
+    const referent = path.join(tmpRoot, "..", `xcoder-purge-ref-${Date.now()}.txt`);
     fs.writeFileSync(referent, "keep");
     try {
       fs.symlinkSync(referent, path.join(tmpRoot, ".agent"), "file");

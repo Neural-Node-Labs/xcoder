@@ -10,7 +10,7 @@ export interface PlaywrightRunResult {
 /**
  * Runs a Playwright test file (or all tests if scriptPath is omitted) via `npx playwright test`.
  * Assumes the target workspace already has @playwright/test configured (playwright.config.ts,
- * browsers installed via `npx playwright install`) — devnull does not bundle Playwright itself,
+ * browsers installed via `npx playwright install`) — xcoder does not bundle Playwright itself,
  * since UI tests belong to the project under test, not to the agent.
  */
 export function runPlaywrightTest(
