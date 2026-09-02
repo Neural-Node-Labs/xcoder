@@ -21,6 +21,24 @@ export function getAuthToken() {
   return authToken;
 }
 
+// The server's token store is in-memory (see src/api/auth.ts) — it's wiped on every API
+// process restart. A token saved in localStorage from a previous server run then comes back
+// as a 401 (missing/malformed header) or a specific-message 403 ("Invalid or expired API
+// token"). Without this, that surfaces as a dead-end network error with no way out short of
+// manually clearing localStorage. AuthContext registers a handler here that force-clears the
+// stale session and drops the user back to the login screen instead.
+const AUTH_INVALID_MESSAGES = new Set([
+  "Invalid or expired API token",
+  "Missing Authorization header",
+  "Authorization header must be: Bearer <token>",
+]);
+
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(fn: (() => void) | null) {
+  onUnauthorized = fn;
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const headers: Record<string, string> = { "Content-Type": "application/json" };
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
@@ -39,6 +57,11 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   }
 
   if (!res.ok || !json.success) {
+    // Only auth-store-level failures trigger a forced logout — NOT requireAdmin's 403
+    // ("Admin privileges required"), which means the token is fine but the role isn't.
+    if (res.status === 401 || (res.status === 403 && AUTH_INVALID_MESSAGES.has(json.error ?? ""))) {
+      onUnauthorized?.();
+    }
     throw new Error(json.error || `Request failed (HTTP ${res.status})`);
   }
   return json.data as T;

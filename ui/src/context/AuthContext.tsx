@@ -1,5 +1,5 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from "react";
-import { api, setAuthToken, getAuthToken } from "../api/client";
+import { createContext, useContext, useState, useCallback, useEffect, ReactNode } from "react";
+import { api, setAuthToken, getAuthToken, setUnauthorizedHandler } from "../api/client";
 
 interface AuthState {
   userId: string | null;
@@ -47,11 +47,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     api.logout().catch(() => {});
+    clearLocalSession();
+  }, []);
+
+  // Clears local session state only — no /logout call — so this is safe to invoke from the
+  // "your token is already invalid" path without re-triggering the same 401/403 in a loop.
+  const clearLocalSession = () => {
     setAuthToken(null);
     localStorage.removeItem("xcoder_user_id");
     localStorage.removeItem("xcoder_username");
     localStorage.removeItem("xcoder_role");
     setState({ token: null, userId: null, username: null, role: null });
+  };
+
+  useEffect(() => {
+    setUnauthorizedHandler(clearLocalSession);
+    return () => setUnauthorizedHandler(null);
   }, []);
 
   return (
