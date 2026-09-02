@@ -75,5 +75,33 @@ services:
           cpus: "0.5"
           memory: 128M
 
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    # Safe array formatting: No broken string text or mapping value syntax errors
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        ollama serve &
+        sleep 5
+        if ! ollama list | grep -q 'qwen2.5-coder:0.5b'; then
+          echo "Pulling qwen2.5-coder:0.5b..."
+          ollama pull qwen2.5-coder:0.5b
+        fi
+        wait
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    volumes:
+      - type: bind
+        source: ./ollama_models
+        target: /root/.ollama
+
+
 volumes:
   devnull-postgres-data:
