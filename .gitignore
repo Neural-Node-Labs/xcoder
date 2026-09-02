@@ -10,3 +10,4 @@ ui/dist/
 .DS_Store
 secrets/
 /.idea/
+/ollama_models/

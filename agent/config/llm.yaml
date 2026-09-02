@@ -1,0 +1,99 @@
+# ronin:version 1 | ronin:task task-d8bbc5 | ronin:updated 2026-08-13T07:22:22.247Z | ronin:subtask code-st-db60d1
+# xcoder/agent/config/llm.yaml
+# LLM backend configuration for the xcoder agent.
+# Swappable provider — this sets DeepSeek as the active backend.
+#
+# NOTE: deepseek-chat / deepseek-reasoner are deprecated 2026-07-24 15:59 UTC and will
+# return errors after that with no fallback. Using the current model IDs directly:
+#   deepseek-v4-flash = non-thinking mode (fast, cheap, default)
+#   deepseek-v4-pro   = thinking mode (deeper reasoning, higher cost)
+#
+# IMPORTANT (per DeepSeek's own Thinking Mode docs): temperature/top_p/presence_penalty/
+# frequency_penalty have NO EFFECT in thinking mode -- xcoder's DeepSeekClient omits them
+# from the request entirely when thinking is enabled, rather than sending dead parameters.
+# reasoning_effort ("high"/"max") is the real lever for thinking-mode depth instead.
+#
+# max_tokens: DeepSeek's official V4 model table gives BOTH deepseek-v4-pro and
+# deepseek-v4-flash a 1,000,000-token total context window and a 384,000-token maximum
+# output -- identical for both tiers, only speed/cost/parameter count differ. The old value
+# here (4096) was sized for the retired deepseek-chat/deepseek-reasoner models (4K default,
+# 8K max), not V4 -- 94x smaller than what V4 actually supports. That mismatch is the
+# confirmed root cause of PM-2026-07-25-001 (silent write_edit_tool truncation at ~16.8KB,
+# which is exactly 4096 tokens' worth of output).
+#
+# Sized at 16384 rather than the model's full 384000 ceiling because max_tokens is NOT free
+# even when unused: DeepSeek rejects a request outright if prompt_tokens + max_tokens exceeds
+# the 1M-token window (see the exact error this incident produced: "1,601,686 in the messages,
+# 4,096 in the completion" -- both counted together against the same ceiling BEFORE generation
+# starts). A larger max_tokens directly shrinks how much conversation history fits before
+# context compaction (contextCompaction.ts) has to work harder. 16384 tokens is roughly 57KB
+# of content at typical code/text tokenization (~3.5 chars/token) -- about 1.9x the size of the
+# file that actually got truncated in this incident (~30KB intended), while reserving only
+# ~1.6% of the window per request instead of 65536's ~6.25%.
+#
+# This deliberately does NOT try to fit arbitrarily large files in one completion. The
+# postmortem's own corrective action P1 concluded "files >20KB should never be written in a
+# single response" -- a moderate max_tokens plus truncationGuard.ts (which catches
+# finish_reason:"length" and forces a clean chunked retry instead of a silent partial write)
+# enforces exactly that as the actual behavior, rather than either the old silent-truncation
+# bug or a maximally generous ceiling that's rarely fully used. If real-world usage regularly
+# needs single-call writes larger than ~57KB, raise this value -- but prefer teaching the model
+# to write large files as multiple mode='edit' appends over reserving a bigger ceiling that
+# costs context budget on every single request regardless of whether that file is being touched.
+#
+# ─── Switching providers ────────────────────────────────────────────────────────
+# The active backend is whatever `provider` says here — DeepSeek is the default, but any
+# OpenAI-compatible provider (openai, openrouter, groq, ollama, or a custom one) and
+# Anthropic can be selected by editing this file + setting one API key env var. No code
+# changes needed.
+#
+# OpenAI-compatible (explicit base_url/endpoint always win):
+#   provider: openai
+#   base_url: https://api.openai.com/v1
+#   endpoint: /chat/completions
+#   model: gpt-5
+#   api_key_env: OPENAI_API_KEY
+#
+# OpenAI-compatible using the known-provider URL registry (base_url/endpoint omitted):
+#   provider: openrouter
+#   model: anthropic/claude-sonnet-4-5
+#   api_key_env: OPENROUTER_API_KEY
+#
+# Anthropic (fixed Messages API URL; base_url/endpoint are ignored):
+#   provider: anthropic
+#   model: claude-sonnet-4-5
+#   api_key_env: ANTHROPIC_API_KEY
+#
+# Keys are never inlined here — `api_key_env` names the environment variable holding the key.
+provider: deepseek
+base_url: https://api.deepseek.com/v1
+endpoint: /chat/completions
+model: deepseek-v4-pro    # non-thinking mode; use deepseek-v4-pro for RCA/Architect/Pentester where deep reasoning matters
+api_key_env: DEEPSEEK_API_KEY
+max_tokens: 16384
+temperature: 0.0            # DeepSeek's own published guidance: 0.0 for code/math tasks (this is a coding agent)
+thinking: false              # always sent explicitly (enabled/disabled), never omitted
+
+# Per-skill overrides: some skills benefit from thinking mode + higher reasoning effort even
+# if the default stays fast. reasoning_effort only takes effect when thinking is true.
+overrides:
+  rca:
+    model: deepseek-v4-pro
+    thinking: true
+    reasoning_effort: high
+  architect:
+    model: deepseek-v4-pro
+    thinking: true
+    reasoning_effort: high
+  pentester:
+    model: deepseek-v4-pro
+    thinking: true
+    reasoning_effort: max    # security-critical reasoning gets the deepest effort level
+
+# Fallback provider if DEEPSEEK_API_KEY is unset or the API errors out.
+fallback:
+  provider: deepseek
+  base_url: https://api.deepseek.com/v1
+  model: deepseek-v4-flash
+  api_key_env: DEEPSEEK_API_KEY
+
