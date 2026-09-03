@@ -85,33 +85,69 @@ services:
           cpus: "0.5"
           memory: 128M
 
+
   ollama:
     image: ollama/ollama:latest
     restart: unless-stopped
     ports:
       - "11434:11434"
-    # Safe array formatting: No broken string text or mapping value syntax errors
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
         ollama serve &
         sleep 5
+        
+        # Model 1: qwen2.5-coder:0.5b
         if ! ollama list | grep -q 'qwen2.5-coder:0.5b'; then
           echo "Pulling qwen2.5-coder:0.5b..."
           ollama pull qwen2.5-coder:0.5b
         fi
+
+        # Model 2: tinyllama
+        if ! ollama list | grep -q 'tinyllama'; then
+          echo "Pulling tinyllama..."
+          ollama pull tinyllama
+        fi
+        
+        # Model 3: Add your new model here (e.g., llama3.2:1b)
+        if ! ollama list | grep -q 'llama3.2:1b'; then
+          echo "Pulling llama3.2:1b..."
+          ollama pull llama3.2:1b
+        fi
+
         wait
     healthcheck:
       test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 15s
+      start_period: 300s
     volumes:
-      - type: bind
-        source: ./ollama_models
-        target: /root/.ollama
+      - ollama-data:/root/.ollama
 
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    depends_on:
+      ollama:
+        condition: service_healthy
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      - WEBUI_SECRET_KEY=xcoder-secret-key-123456
+      # Disable local HuggingFace embedding downloads to prevent startup hang
+      - RAG_EMBEDDING_ENGINE=""
+      - ENABLE_RAG_LOCAL_WEB_FETCH=False
+    volumes:
+      - open-webui-data:/app/backend/data
+    deploy:
+      resources:
+        limits:
+          cpus: "2.0"
+          memory: 2048M
 
 volumes:
   xcoder-postgres-data:
+  open-webui-data:
+  ollama-data:
