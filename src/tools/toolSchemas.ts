@@ -875,5 +875,50 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
       },
     },
   },
+  {
+    type: "function",
+    function: {
+      name: "codegraph_tool",
+      description:
+        "Query a connected CodeGraph instance (Platform > Integrations > CodeGraph) for structural facts about an indexed codebase: full-text symbol search, a single node's details, its dependencies/dependents, blast-radius impact analysis, shortest path between two symbols, unresolved references, or project-wide stats. Prefer this over grep_tool when the question is about code *structure* or *relationships* (\"what calls this function\", \"what breaks if I change this\") rather than raw text matching.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: {
+            type: "string",
+            description:
+              "One of: 'search' (full-text query), 'get_node', 'dependencies', 'dependents', 'impact', 'path', 'unresolved', 'stats'.",
+          },
+          projectId: { type: "number", description: "CodeGraph project id. Optional if the integration has a default project configured." },
+          query: { type: "string", description: "Full-text search string, required for action='search'." },
+          nodeId: { type: "number", description: "Node id, required for get_node/dependencies/dependents/impact; used as the default source for 'path'." },
+          depth: { type: "number", description: "Traversal depth for dependencies/dependents/impact. Defaults: 1/1/2." },
+          source: { type: "number", description: "Source node id for action='path' (falls back to nodeId if omitted)." },
+          target: { type: "number", description: "Target node id, required for action='path'." },
+          limit: { type: "number", description: "Max rows to return for 'search' and 'unresolved'." },
+        },
+        required: ["action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "mcp_tool",
+      description:
+        "Call a tool exposed by an external Model Context Protocol (MCP) server. Use action='list' first to discover which tools a server offers and their input schema, then action='call' to invoke one. MCP servers are launched as local subprocesses over stdio, identified by the exact same command/args used to start them (e.g. 'npx @modelcontextprotocol/server-filesystem /some/dir'). Special case: pass command='codegraph-mcp' (args not needed) to launch the CodeGraph MCP server bundled with xcoder against whichever CodeGraph instance is currently connected under Platform > Integrations.",
+      parameters: {
+        type: "object",
+        properties: {
+          action: { type: "string", description: "'list' to discover available tools, or 'call' to invoke one." },
+          command: { type: "string", description: "Executable to launch the MCP server, e.g. 'npx' or 'python'." },
+          args: { type: "array", items: { type: "string" }, description: "Arguments passed to the MCP server command." },
+          toolName: { type: "string", description: "Required for action='call': the MCP tool name, from a prior action='list' call." },
+          toolArgs: { type: "object", description: "Required for action='call': arguments matching the MCP tool's input schema." },
+        },
+        required: ["action", "command"],
+      },
+    },
+  },
 ];
 

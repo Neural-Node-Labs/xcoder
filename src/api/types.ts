@@ -206,13 +206,25 @@ export interface User {
   username: string;
   role: "admin" | "user";
   createdAt: string;
+  /** How this account authenticates. "google" accounts have no local password and can only
+   *  log in via Sign in with Google. Defaults to "local" for existing/legacy accounts. */
+  authProvider?: "local" | "google";
+  /** Email address on file. Always present for authProvider "google"; optional otherwise. */
+  email?: string;
 }
 
 /** POST /api/v1/users request body. */
 export interface CreateUserRequest {
-  username: string;
-  password: string;
+  /** Required for authProvider "local" (the default). Ignored for "google" accounts, which are
+   *  identified by email and only ever authenticate through Google's own sign-in flow. */
+  username?: string;
+  password?: string;
   role?: "admin" | "user";
+  /** "google" pre-links this account to a Google identity by email instead of a password — the
+   *  user then signs in with the "Sign in with Google" button. Defaults to "local". */
+  authProvider?: "local" | "google";
+  /** Required when authProvider is "google". */
+  email?: string;
 }
 
 /** PUT /api/v1/users/:id request body. */
@@ -233,6 +245,14 @@ export interface LoginResponse {
   userId: string;
   username: string;
   role: "admin" | "user";
+}
+
+/** POST /api/v1/auth/google request body. Sent by the frontend after Google Identity Services
+ *  (GIS) returns a signed ID token for the account the user picked. */
+export interface GoogleLoginRequest {
+  /** The raw Google ID token (JWT) from the GIS `credential` response. Verified server-side
+   *  against Google's public keys before any session is issued — never trust it unverified. */
+  credential: string;
 }
 
 // ─── Phase Report Types ──────────────────────────────────────────────────
@@ -315,4 +335,42 @@ export interface TaskHistoryDetailResponse {
   task: TaskHistoryEntryResponse;
 }
 
+// ─── Platform Types ────────────────────────────────────────────────────────
+
+/** A single entry in the Platform > Tools list. One per tool the orchestrator can call. */
+export interface PlatformToolEntry {
+  name: string;
+  description: string;
+  /** "builtin" ships with xcoder; "integration" is provided by a connected external system
+   *  (e.g. CodeGraph) and only appears once that integration is connected. */
+  source: "builtin" | "integration";
+}
+
+/** GET /api/v1/platform/tools response data. */
+export interface PlatformToolsResponse {
+  tools: PlatformToolEntry[];
+}
+
+/** A third-party system that can be connected under Platform > Integrations. */
+export interface PlatformIntegrationEntry {
+  id: string;
+  name: string;
+  description: string;
+  connected: boolean;
+}
+
+/** GET /api/v1/platform/integrations response data. */
+export interface PlatformIntegrationsResponse {
+  integrations: PlatformIntegrationEntry[];
+}
+
+/** POST /api/v1/platform/integrations/codegraph request body. */
+export interface ConnectCodegraphRequest {
+  /** Base URL of the CodeGraph API server, e.g. http://localhost:8000. */
+  baseUrl: string;
+  /** Per-user CodeGraph API key (from CodeGraph's own Users admin screen). */
+  apiKey: string;
+  /** Default CodeGraph project id to query when a tool call doesn't specify one. */
+  defaultProjectId?: string;
+}
 

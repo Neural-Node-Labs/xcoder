@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { api, ChatResponse, EnginesResponse, Project } from "../api/client";
 import { EngineBadge, HealthScore } from "../components/Badges";
+import { ChatPanel } from "../components/ChatPanel";
 
 type RunState =
   | { phase: "idle" }
@@ -11,6 +12,7 @@ type RunState =
   | { phase: "error"; message: string };
 
 export function Dashboard() {
+  const [tab, setTab] = useState<"task" | "chat">("task");
   const [task, setTask] = useState("");
   const [engines, setEngines] = useState<EnginesResponse | null>(null);
   const [engine, setEngine] = useState<string>("");
@@ -80,102 +82,117 @@ export function Dashboard() {
 
   return (
     <div>
-      {mockLlm && (
-        <div className="badge badge-amber" style={{ display: "flex", marginBottom: 14 }}>
-          ⚠ This server is running with a MOCK LLM connection — task results below are
-          simulated, not real model output. See Settings for details.
-        </div>
-      )}
-      <div className="grid grid-2" style={{ alignItems: "start" }}>
-        <div className="card">
-          <div className="card-title">New task</div>
-
-          <div className="field">
-            <label>What should xcoder do?</label>
-            <textarea
-              value={task}
-              onChange={(e) => setTask(e.target.value)}
-              placeholder='e.g. "Add rate limiting middleware to the /api/v1 routes and write tests for it"'
-              disabled={run.phase !== "idle" && run.phase !== "error"}
-            />
-          </div>
-
-          <div className="grid grid-2">
-            <div className="field">
-              <label>Engine</label>
-              <select value={engine} onChange={(e) => setEngine(e.target.value)} disabled={!engines}>
-                {engines?.engines.map((e) => (
-                  <option key={e} value={e}>
-                    {e}
-                    {e === engines.default ? " (default)" : ""}
-                  </option>
-                ))}
-              </select>
-              <div className="field-hint">
-                {engine === "sdlc"
-                  ? "DAG-based SDLC pipeline with an independent Validation Gate per stage."
-                  : engine
-                  ? "See src/core/engine/EngineRegistry.ts for what this engine does."
-                  : ""}
-              </div>
-            </div>
-
-            <div className="field">
-              <label>Project</label>
-              <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
-                <option value="">(active project / server cwd)</option>
-                {projects.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                    {p.active ? " · active" : ""}
-                  </option>
-                ))}
-              </select>
-            </div>
-          </div>
-
-          <div className="grid grid-2">
-            <div className="field">
-              <label>Plan mode</label>
-              <select value={planMode} onChange={(e) => setPlanMode(e.target.value as typeof planMode)}>
-                <option value="auto">Auto (plan for non-trivial tasks)</option>
-                <option value="always">Always ask for approval</option>
-                <option value="never">Never — run immediately</option>
-              </select>
-            </div>
-            <div className="field">
-              <label>Options</label>
-              <div className="row" style={{ gap: 14, paddingTop: 8 }}>
-                <label className="row" style={{ gap: 6, fontWeight: 400, fontSize: 12 }}>
-                  <input type="checkbox" style={{ width: "auto" }} checked={phasePlanning} onChange={(e) => setPhasePlanning(e.target.checked)} />
-                  Phase planning
-                </label>
-                <label className="row" style={{ gap: 6, fontWeight: 400, fontSize: 12 }}>
-                  <input type="checkbox" style={{ width: "auto" }} checked={isolatedWorkspace} onChange={(e) => setIsolatedWorkspace(e.target.checked)} />
-                  Isolated workspace
-                </label>
-              </div>
-            </div>
-          </div>
-
-          <div className="row" style={{ marginTop: 4 }}>
-            {run.phase === "idle" || run.phase === "error" ? (
-              <button className="btn btn-primary" onClick={submitTask} disabled={!task.trim()}>
-                ▶ Run task
-              </button>
-            ) : (
-              <button className="btn btn-ghost" onClick={reset} disabled={run.phase === "planning" || run.phase === "running"}>
-                ↺ New task
-              </button>
-            )}
-          </div>
-        </div>
-
-        <div className="card">
-          <div className="card-title">Result</div>
-          <RunOutput run={run} onApprove={approvePlan} />
-        </div>
+      <div className="chat-tabs">
+        <button className={`btn btn-sm ${tab === "task" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("task")}>
+          ▶ Task
+        </button>
+        <button className={`btn btn-sm ${tab === "chat" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("chat")}>
+          💬 Chat
+        </button>
       </div>
+
+      {tab === "chat" ? (
+        <ChatPanel projects={projects} />
+      ) : (
+        <>
+          {mockLlm && (
+            <div className="badge badge-amber" style={{ display: "flex", marginBottom: 14 }}>
+              ⚠ This server is running with a MOCK LLM connection — task results below are
+              simulated, not real model output. See Settings for details.
+            </div>
+          )}
+          <div className="grid grid-2" style={{ alignItems: "start" }}>
+            <div className="card">
+              <div className="card-title">New task</div>
+
+              <div className="field">
+                <label>What should xcoder do?</label>
+                <textarea
+                  value={task}
+                  onChange={(e) => setTask(e.target.value)}
+                  placeholder='e.g. "Add rate limiting middleware to the /api/v1 routes and write tests for it"'
+                  disabled={run.phase !== "idle" && run.phase !== "error"}
+                />
+              </div>
+
+              <div className="grid grid-2">
+                <div className="field">
+                  <label>Engine</label>
+                  <select value={engine} onChange={(e) => setEngine(e.target.value)} disabled={!engines}>
+                    {engines?.engines.map((e) => (
+                      <option key={e} value={e}>
+                        {e}
+                        {e === engines.default ? " (default)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="field-hint">
+                    {engine === "sdlc"
+                      ? "DAG-based SDLC pipeline with an independent Validation Gate per stage."
+                      : engine
+                      ? "See src/core/engine/EngineRegistry.ts for what this engine does."
+                      : ""}
+                  </div>
+                </div>
+
+                <div className="field">
+                  <label>Project</label>
+                  <select value={projectId} onChange={(e) => setProjectId(e.target.value)}>
+                    <option value="">(active project / server cwd)</option>
+                    {projects.map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                        {p.active ? " · active" : ""}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-2">
+                <div className="field">
+                  <label>Plan mode</label>
+                  <select value={planMode} onChange={(e) => setPlanMode(e.target.value as typeof planMode)}>
+                    <option value="auto">Auto (plan for non-trivial tasks)</option>
+                    <option value="always">Always ask for approval</option>
+                    <option value="never">Never — run immediately</option>
+                  </select>
+                </div>
+                <div className="field">
+                  <label>Options</label>
+                  <div className="row" style={{ gap: 14, paddingTop: 8 }}>
+                    <label className="row" style={{ gap: 6, fontWeight: 400, fontSize: 12 }}>
+                      <input type="checkbox" style={{ width: "auto" }} checked={phasePlanning} onChange={(e) => setPhasePlanning(e.target.checked)} />
+                      Phase planning
+                    </label>
+                    <label className="row" style={{ gap: 6, fontWeight: 400, fontSize: 12 }}>
+                      <input type="checkbox" style={{ width: "auto" }} checked={isolatedWorkspace} onChange={(e) => setIsolatedWorkspace(e.target.checked)} />
+                      Isolated workspace
+                    </label>
+                  </div>
+                </div>
+              </div>
+
+              <div className="row" style={{ marginTop: 4 }}>
+                {run.phase === "idle" || run.phase === "error" ? (
+                  <button className="btn btn-primary" onClick={submitTask} disabled={!task.trim()}>
+                    ▶ Run task
+                  </button>
+                ) : (
+                  <button className="btn btn-ghost" onClick={reset} disabled={run.phase === "planning" || run.phase === "running"}>
+                    ↺ New task
+                  </button>
+                )}
+              </div>
+            </div>
+
+            <div className="card">
+              <div className="card-title">Result</div>
+              <RunOutput run={run} onApprove={approvePlan} />
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

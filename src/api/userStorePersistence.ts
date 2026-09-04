@@ -33,7 +33,12 @@ export function loadPersistedUsers(): StoredUser[] {
   if (!fs.existsSync(STORE_PATH)) return [];
   try {
     const parsed = JSON.parse(fs.readFileSync(STORE_PATH, "utf-8"));
-    return Array.isArray(parsed) ? parsed : [];
+    if (!Array.isArray(parsed)) return [];
+    // Migration: users persisted before the Google sign-in feature won't have `authProvider`
+    // on disk. Default them to "local" so every downstream check (verifyLogin, findGoogleUser,
+    // the /users list, etc.) can treat the field as always-present rather than special-casing
+    // "old" records everywhere.
+    return parsed.map((u: StoredUser) => ({ ...u, authProvider: u.authProvider ?? "local" }));
   } catch {
     return []; // a corrupt store shouldn't take the whole API down; worst case is an empty
     // user list, which just re-triggers the "no users yet, register the first admin" flow.

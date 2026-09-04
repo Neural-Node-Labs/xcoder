@@ -1,6 +1,6 @@
 import { useAuth } from "../context/AuthContext";
 
-export type Page = "dashboard" | "wbs" | "history" | "skills" | "projects" | "logs" | "users" | "settings";
+export type Page = "dashboard" | "wbs" | "history" | "skills" | "projects" | "tools" | "codegraph" | "logs" | "users" | "settings";
 
 const NAV: { section: string; items: { key: Page; label: string; icon: string; adminOnly?: boolean }[] }[] = [
   {
@@ -16,6 +16,8 @@ const NAV: { section: string; items: { key: Page; label: string; icon: string; a
     section: "Platform",
     items: [
       { key: "skills", label: "Skills", icon: "◈" },
+      { key: "tools", label: "Tools", icon: "▣" },
+      { key: "codegraph", label: "CodeGraph", icon: "◉" },
       { key: "projects", label: "Projects", icon: "▢" },
     ],
   },

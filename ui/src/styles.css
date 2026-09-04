@@ -485,6 +485,33 @@ textarea:focus {
   box-shadow: 0 0 10px var(--cyan-dim);
 }
 
+/* The <select> element itself picks up --text-0/--bg via the rule above, but the native
+   OS/browser-rendered option popup does NOT inherit those custom properties — it falls back to
+   the platform's own light/dark rendering. On a system in dark mode this produced light text on
+   a light popup background (the popup's default light-on-light or, on some engines, our own
+   light --text-0 on the browser's default white option background), making every <option> label
+   unreadable. Force explicit colors on <option> (and the disabled/selected states) so the
+   dropdown list is always legible regardless of the OS theme. */
+select {
+  color-scheme: dark;
+}
+
+select option {
+  background-color: var(--bg-2);
+  color: var(--text-0);
+}
+
+select option:checked,
+select option:hover,
+select option:focus {
+  background-color: var(--cyan-dim);
+  color: var(--text-0);
+}
+
+select option:disabled {
+  color: var(--text-2);
+}
+
 textarea {
   resize: vertical;
   min-height: 90px;
@@ -733,6 +760,130 @@ tr:hover td {
 .kanban-card:hover {
   border-color: var(--cyan);
   box-shadow: 0 0 10px var(--cyan-dim);
+}
+
+/* ─── Platform / tool list ───────────────────────────────────────────── */
+
+.tool-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  /* Show ~5 rows (each row ~46px incl. gap) then scroll for the rest. */
+  max-height: 236px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.tool-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.tool-list::-webkit-scrollbar-thumb {
+  background: var(--border);
+  border-radius: 4px;
+}
+
+.tool-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: rgba(0, 230, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 12px;
+  font-size: 12px;
+}
+
+.tool-row-name {
+  color: var(--text-0);
+  font-family: var(--mono);
+  font-weight: 600;
+}
+
+.tool-row-desc {
+  color: var(--text-2);
+  font-size: 11px;
+  margin-top: 2px;
+}
+
+.integration-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: rgba(0, 230, 255, 0.04);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 14px;
+  margin-bottom: 10px;
+}
+
+.integration-card-icon {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 16px;
+  background: var(--cyan-dim);
+  border: 1px solid var(--cyan);
+  flex-shrink: 0;
+}
+
+/* ─── Chat panel ─────────────────────────────────────────────────────── */
+
+.chat-tabs {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 14px;
+}
+
+.chat-thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding: 4px 4px 4px 0;
+  margin-bottom: 12px;
+}
+
+.chat-bubble {
+  max-width: 82%;
+  padding: 10px 14px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  word-break: break-word;
+  border: 1px solid var(--border);
+}
+
+.chat-bubble-user {
+  align-self: flex-end;
+  background: var(--cyan-dim);
+  border-color: var(--cyan);
+  color: var(--text-0);
+}
+
+.chat-bubble-assistant {
+  align-self: flex-start;
+  background: rgba(0, 230, 255, 0.05);
+  color: var(--text-1);
+}
+
+.chat-input-row {
+  display: flex;
+  gap: 8px;
+}
+
+.chat-input-row textarea {
+  flex: 1;
+  resize: none;
+  min-height: 44px;
+  max-height: 140px;
 }
 
 /* ─── Log / console viewer ───────────────────────────────────────────── */

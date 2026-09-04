@@ -41,6 +41,8 @@ import { handler as renameSymbolHandler } from "./renameSymbolTool.js";
 import { handler as applyUnifiedDiffHandler } from "./applyUnifiedDiffTool.js";
 import { handler as writeFileToolHandler } from "./writeFileTool.js";
 import { handler as validateFileHandler } from "./validateFileTool.js";
+import { runCodegraphTool, CodegraphToolArgs } from "./codegraphTool.js";
+import { runMcpTool, McpToolArgs } from "./mcpTool.js";
 
 /**
  * Attempts to parse JSON with automatic repair for common LLM generation errors.
@@ -336,6 +338,9 @@ const SHELL_AND_REMOTE_EXEC_TOOLS = new Set([
   "ssh_run_command",
   "docker_compose_deploy_tool",
   "docker_deploy_ssh_tool",
+  // mcp_tool spawns an arbitrary local subprocess (the MCP server command) just like
+  // run_command_tool does, so it gets gated by the same shell/remote-exec kill switch.
+  "mcp_tool",
 ]);
 
 const NETWORK_FETCH_TOOLS = new Set([
@@ -345,6 +350,7 @@ const NETWORK_FETCH_TOOLS = new Set([
   "summarize_url_tool",
   "api_test_tool",
   "github_tool",
+  "codegraph_tool",
 ]);
 
 function disabledToolReason(name: string): string | undefined {
@@ -826,6 +832,14 @@ case "conversation_tool": {
       }
       case "validate_file_tool": {
         const result = await validateFileHandler(args as any, cwd);
+        return { toolCallId: call.id, toolName: name, observation: result, isError: false };
+      }
+      case "codegraph_tool": {
+        const result = await runCodegraphTool(args as unknown as CodegraphToolArgs);
+        return { toolCallId: call.id, toolName: name, observation: result, isError: false };
+      }
+      case "mcp_tool": {
+        const result = await runMcpTool(args as unknown as McpToolArgs);
         return { toolCallId: call.id, toolName: name, observation: result, isError: false };
       }
       default:

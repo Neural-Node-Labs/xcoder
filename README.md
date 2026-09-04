@@ -118,8 +118,46 @@ escalates: it writes a rejection report and halts, rather than silently pushing 
 broken foundation. See `src/core/engine/SdlcEngine.ts` for the full design rationale.
 
 Other registered engines remain fully available — `react` (the original ReAct loop),
-`lean`, `simple`, `swarm`, `agentic`, `brain`, `procedure` — reachable via `--engine <name>`,
-a dedicated CLI flag (`--react`, `--lean`, …), or the `engine` field on `/api/v1/chat`.
+`lean`, `simple`, `swarm`, `agentic`, `brain`, `procedure`, and `assistant` — reachable via
+`--engine <name>`, a dedicated CLI flag (`--react`, `--lean`, …), or the `engine` field on
+`/api/v1/chat`.
+
+`assistant` is the odd one out in that list — it's not an SDLC engine. It's the same bare
+ReAct loop as `simple`, pointed at a conversational system prompt instead of "complete this
+deliverable and stop." It's what the dashboard's **Chat** tab (next to **Task**, under Run a
+Task) talks to: direct back-and-forth conversation and small one-off requests, with full access
+to the same tools, skills, and MCP servers every other engine has — just without DAG planning
+or multi-stage delegation. There's no server-side chat session; the UI replays the running
+transcript as context on each turn (see `ChatPanel.tsx`).
+
+## MCP (Model Context Protocol)
+
+`mcp_tool` lets any engine call tools exposed by an external MCP server — the same way an
+editor like Claude Desktop would. It's a small, dependency-free client (see `src/tools/mcpTool.ts`)
+that speaks MCP's stdio JSON-RPC transport directly, so no `@modelcontextprotocol/sdk`
+dependency is needed. Two actions:
+
+- `action: "list"` — discover what tools a server offers and their input schema
+- `action: "call"` — invoke one, with `toolName` + `toolArgs`
+
+Point it at any MCP server via `command` (+ optional `args`), e.g. `npx
+@modelcontextprotocol/server-filesystem /some/dir`. The bundled CodeGraph MCP server (see
+below) has its own shortcut: `command: "codegraph-mcp"` resolves straight to it with the right
+interpreter and credentials, no path/args needed.
+
+## Sign in with Google
+
+Set `XCODER_GOOGLE_CLIENT_ID` (an OAuth "Web application" client id from Google Cloud Console —
+see `.env.example`) to turn on Google sign-in. Once configured:
+
+- End users see a "Sign in with Google" button on the login screen and can self-register/log in
+  with their Google account — no admin action needed.
+- Admins can also add a Google-linked account ahead of time from the **Users** page (email only,
+  no password) — it activates the first time that person signs in with Google.
+
+The ID token is verified server-side (`google-auth-library`, see `src/api/googleAuth.ts`)
+before any session is issued. Leave the variable unset and the button never appears —
+`GET /api/v1/auth/google/config` reports `{ enabled: false }`.
 
 ## Local models (Ollama)
 
@@ -132,6 +170,7 @@ talks to `http://localhost:11434` with no `Authorization` header at all — see
 ```
 src/                    backend: CLI, HTTP API, engines, tools, telemetry, database
 ui/                     web dashboard (Vite + React + TypeScript)
+integrations/codegraph/ bundled CodeGraph system (API server, MCP server, Explorer UI) — see below
 migrations/postgres/    versioned SQL migrations, tracked in the _migrations table (see src/db/migrations.ts)
 agent/                  (not included — see below) install-level config: llm.yaml, xcoder.md, skills/
 .agent/                 per-workspace runtime state: tasks/, logs/, index/, plans/, reports/
@@ -151,6 +190,26 @@ running anything that needs an LLM.
 
 `.agent/` (with a leading dot) is fully managed by xcoder itself — nothing under it needs to
 be created by hand, and `xcoder purge` removes it entirely.
+
+## CodeGraph (bundled)
+
+xcoder ships the full CodeGraph system — a structural code-graph API, an MCP server, and a
+React Explorer UI — under `integrations/codegraph/`, not just a client pointed at a
+separately-hosted instance. From **Platform > Tools** in the dashboard:
+
+1. One-time setup: `npm run codegraph:install` (creates a Python venv under
+   `integrations/codegraph/codegraph/.venv` and installs CodeGraph's pinned dependencies).
+2. Click **Start bundled CodeGraph**. xcoder spawns the API server, authenticates as its
+   auto-seeded admin, and wires the resulting API key into `codegraph_tool` automatically — no
+   URL or key to type in.
+3. Click **Open Explorer** for the full CodeGraph UI, embedded at `/codegraph-ui` and
+   pre-authenticated via a same-origin SSO bridge.
+
+Every engine — including the chat-first `assistant` engine — gets `codegraph_tool` (full-text
+search, dependency/impact analysis, symbol path-finding) once it's running, plus `mcp_tool` can
+reach the bundled MCP server directly via `command: "codegraph-mcp"`. Prefer to run CodeGraph
+yourself (e.g. a shared team deployment)? Use "Advanced: connect an external instance instead"
+on the same page, or set `XCODER_CODEGRAPH_URL` / `XCODER_CODEGRAPH_API_KEY` — see `.env.example`.
 
 ## Try it with no API key at all
 

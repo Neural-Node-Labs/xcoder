@@ -35,9 +35,21 @@ const tokenStore = new Map<string, TokenEntry>();
 export interface StoredUser {
   id: string;
   username: string;
+  /** Empty string for "google" accounts — they have no local password at all, so
+   *  verifyPassword() can never accidentally succeed against it (an empty stored hash never
+   *  parses into a valid scrypt/legacy format, so verifyPassword always returns false). */
   passwordHash: string;
   role: "admin" | "user";
   createdAt: string;
+  /** "google" accounts authenticate exclusively via verifyGoogleLogin() below; "local" (the
+   *  default, including every pre-existing user) authenticates via verifyLogin(). */
+  authProvider: "local" | "google";
+  /** Google's stable subject id ("sub" claim) for this account. Only set for authProvider
+   *  "google" — this, not email, is the durable identifier Google recommends matching on. */
+  googleId?: string;
+  /** Email on file. Always set for "google" accounts (it's how an admin pre-links one before
+   *  first login); optional for "local" accounts. */
+  email?: string;
 }
 
 let userStore: StoredUser[] = [];
@@ -194,8 +206,22 @@ function timingSafeEqualHex(a: string, b: string): boolean {
 export function verifyLogin(username: string, password: string): StoredUser | null {
   const user = userStore.find((u) => u.username === username);
   if (!user) return null;
+  if (user.authProvider === "google") return null; // no local password to check
   if (!verifyPassword(password, user.passwordHash)) return null;
   return user;
+}
+
+/**
+ * Find the user linked to a verified Google identity, matching first by the durable Google
+ * subject id (googleId) and falling back to email (covers a user an admin pre-created by email
+ * before their first Google sign-in, which only has email on file yet).
+ */
+export function findGoogleUser(googleId: string, email: string): StoredUser | null {
+  return (
+    userStore.find((u) => u.authProvider === "google" && u.googleId === googleId) ??
+    userStore.find((u) => u.authProvider === "google" && !u.googleId && u.email?.toLowerCase() === email.toLowerCase()) ??
+    null
+  );
 }
 
 // ─── Rate Limiting ──────────────────────────────────────────────────────────
@@ -304,6 +330,7 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
   // Skip auth for login and register endpoints
   if ((req.path === "/login" && req.method === "POST") ||
       (req.path === "/register" && req.method === "POST") ||
+      (req.path === "/auth/google" && req.method === "POST") ||
       (req.path === "/users/count" && req.method === "GET")) {
     next();
     return;

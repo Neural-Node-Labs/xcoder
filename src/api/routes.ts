@@ -9,12 +9,16 @@ import { FileTelemetry } from "../telemetry/logger.js";
 import { loadLlmConfig } from "../config/loadConfig.js";
 import { resolveLogsDir } from "../config/paths.js";
 import { SkillRegistry } from "../core/skillRegistry.js";
-import { authMiddleware, requireAdmin, verifyLogin, generateToken, revokeToken, setUserStore, getUserStore, hashPassword, isLegacyHash, checkRateLimit, checkTaskRateLimit, StoredUser } from "./auth.js";
+import { authMiddleware, requireAdmin, verifyLogin, findGoogleUser, generateToken, revokeToken, setUserStore, getUserStore, hashPassword, isLegacyHash, checkRateLimit, checkTaskRateLimit, StoredUser } from "./auth.js";
+import { verifyGoogleIdToken, isGoogleSignInConfigured, getGoogleClientId } from "./googleAuth.js";
 import { loadPersistedUsers, persistUsers, nextUserIdAfter } from "./userStorePersistence.js";
 import { registerProjectRoutes } from "./projectRoutes.js";
 import { registerPlanRoutes } from "./planRoutes.js";
 import { listProjects, getProject, getActiveProject } from "./projectStore.js";
 import { hasStoredApiKey, setStoredApiKey, clearStoredApiKey, applyStoredApiKey } from "./llmKeyStore.js";
+import { getCodegraphConnection, isCodegraphConnected, setCodegraphConnection, clearCodegraphConnection } from "./codegraphKeyStore.js";
+import { getStatus as getCodegraphStatus, startBundledCodegraph, stopBundledCodegraph, getSsoSession } from "./codegraphProcess.js";
+import { TOOL_SCHEMAS } from "../tools/toolSchemas.js";
 import { readTaskHistory } from "../core/taskHistory.js";
 import { PhaseReportStore } from "./phaseReportStore.js";
 import { WbsStore } from "./wbsStore.js";
@@ -40,6 +44,12 @@ import type {
   TaskHistoryEntryResponse,
   TaskHistoryListResponse,
   TaskHistoryDetailResponse,
+  GoogleLoginRequest,
+  PlatformToolEntry,
+  PlatformToolsResponse,
+  PlatformIntegrationEntry,
+  PlatformIntegrationsResponse,
+  ConnectCodegraphRequest,
 } from "./types.js";
 
 const pkg = JSON.parse(
@@ -183,6 +193,18 @@ export function createRouter(): Router {
   router.get("/engines", (_req: Request, res: Response) => {
     const data: EnginesResponse = { engines: listEngines(), default: DEFAULT_ENGINE };
     const body: ApiResponse<EnginesResponse> = { success: true, data };
+    res.json(body);
+  });
+
+  // ─── Google sign-in config (no auth required — the login screen needs this before the
+  //     user has any token, to decide whether to render the "Sign in with Google" button
+  //     and which client id to initialize Google Identity Services with). Never exposes a
+  //     secret: the OAuth "Web application" client id is intentionally public. ────────────
+  router.get("/auth/google/config", (_req: Request, res: Response) => {
+    const body: ApiResponse<{ enabled: boolean; clientId: string }> = {
+      success: true,
+      data: { enabled: isGoogleSignInConfigured(), clientId: isGoogleSignInConfigured() ? getGoogleClientId() : "" },
+    };
     res.json(body);
   });
 
@@ -581,6 +603,109 @@ export function createRouter(): Router {
     res.json(body);
   });
 
+  // ─── Platform: Tools ────────────────────────────────────────────────────────────────
+  // Backs the new Platform > Tools screen. Every registered tool the orchestrator can call,
+  // annotated with whether it ships built-in or was added by connecting an integration (so
+  // the UI can show e.g. codegraph_tool as available only once CodeGraph is connected).
+  router.get("/platform/tools", (_req: Request, res: Response) => {
+    const integrationToolNames = new Set(["codegraph_tool"]);
+    const tools: PlatformToolEntry[] = TOOL_SCHEMAS
+      .filter((t) => !integrationToolNames.has(t.function.name) || isCodegraphConnected())
+      .map((t) => ({
+        name: t.function.name,
+        description: t.function.description,
+        source: integrationToolNames.has(t.function.name) ? "integration" : "builtin",
+      }));
+    const body: ApiResponse<PlatformToolsResponse> = { success: true, data: { tools } };
+    res.json(body);
+  });
+
+  // ─── Platform: Integrations ─────────────────────────────────────────────────────────
+  router.get("/platform/integrations", (_req: Request, res: Response) => {
+    const integrations: PlatformIntegrationEntry[] = [
+      {
+        id: "codegraph",
+        name: "CodeGraph",
+        description: "Structural code-graph search, dependency/impact analysis, and symbol path-finding over an indexed codebase.",
+        connected: isCodegraphConnected(),
+      },
+    ];
+    const body: ApiResponse<PlatformIntegrationsResponse> = { success: true, data: { integrations } };
+    res.json(body);
+  });  // Connect/update the CodeGraph integration (admin only — this stores a shared API key
+  // every tenant's tasks will use when calling codegraph_tool).
+  router.post("/platform/integrations/codegraph", requireAdmin, (req: Request, res: Response) => {
+    const { baseUrl, apiKey, defaultProjectId } = req.body as ConnectCodegraphRequest;
+
+    if (!baseUrl || typeof baseUrl !== "string" || baseUrl.trim().length === 0) {
+      const body: ApiResponse = { success: false, error: "Missing or empty 'baseUrl' field" };
+      res.status(400).json(body);
+      return;
+    }
+    if (!apiKey || typeof apiKey !== "string" || apiKey.trim().length === 0) {
+      const body: ApiResponse = { success: false, error: "Missing or empty 'apiKey' field" };
+      res.status(400).json(body);
+      return;
+    }
+    try {
+      new URL(baseUrl.trim());
+    } catch {
+      const body: ApiResponse = { success: false, error: "'baseUrl' must be a valid URL, e.g. http://localhost:8000" };
+      res.status(400).json(body);
+      return;
+    }
+
+    setCodegraphConnection({ baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), defaultProjectId });
+    const body: ApiResponse<{ connected: true }> = { success: true, data: { connected: true } };
+    res.json(body);
+  });
+
+  // Disconnect CodeGraph (admin only).
+  router.delete("/platform/integrations/codegraph", requireAdmin, (_req: Request, res: Response) => {
+    clearCodegraphConnection();
+    const body: ApiResponse<{ connected: false }> = { success: true, data: { connected: false } };
+    res.json(body);
+  });
+
+  // ─── CodeGraph: bundled instance lifecycle ──────────────────────────────────────────
+  // xcoder ships the whole CodeGraph system (API + MCP server + Explorer UI) under
+  // integrations/codegraph/ — see codegraphProcess.ts. These routes let an admin start/stop
+  // that bundled instance and auto-connect it, without ever standing up CodeGraph separately
+  // or hand-entering a URL/API key (the manual /platform/integrations/codegraph route above
+  // still exists for pointing at an externally-hosted CodeGraph instead, if preferred).
+  router.get("/platform/integrations/codegraph/status", (_req: Request, res: Response) => {
+    const body: ApiResponse = { success: true, data: getCodegraphStatus() };
+    res.json(body);
+  });
+
+  router.post("/platform/integrations/codegraph/start", requireAdmin, async (_req: Request, res: Response) => {
+    try {
+      const status = await startBundledCodegraph();
+      const body: ApiResponse = { success: true, data: status };
+      res.json(body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const body: ApiResponse = { success: false, error: message };
+      res.status(500).json(body);
+    }
+  });
+
+  router.post("/platform/integrations/codegraph/stop", requireAdmin, (_req: Request, res: Response) => {
+    const status = stopBundledCodegraph();
+    const body: ApiResponse = { success: true, data: status };
+    res.json(body);
+  });
+
+  // Session info for the embedded CodeGraph Explorer iframe at /codegraph-ui — admin only,
+  // since it hands back a real CodeGraph admin session token. The frontend writes this into
+  // localStorage (same-origin as the iframe) right before mounting it, so the embedded
+  // Explorer comes up already signed in. Returns null if the bundled instance isn't running.
+  router.get("/platform/integrations/codegraph/sso", requireAdmin, (_req: Request, res: Response) => {
+    const session = getSsoSession();
+    const body: ApiResponse = { success: true, data: session };
+    res.json(body);
+  });
+
   // ─── Task History (read-only; the agent queries this itself via task_history_tool —
   // this endpoint is purely so the UI can also show it, e.g. a "recent tasks" list) ───────
   router.get("/task-history", (req: Request, res: Response) => {
@@ -839,6 +964,7 @@ export function createRouter(): Router {
       passwordHash: hashPassword(password),
       role: "admin",
       createdAt: new Date().toISOString(),
+      authProvider: "local",
     };
 
     storedUsers.push(newUser);
@@ -851,6 +977,81 @@ export function createRouter(): Router {
     res.status(201).json(body);
   });
 
+  // ─── Sign in with Google (no auth required — see auth.ts's skip list) ───────────────
+  // Handles BOTH first-time self-registration and every subsequent login for a Google
+  // account: verify the ID token, then either match an existing "google" user (by googleId,
+  // or by email if an admin pre-created the account — see findGoogleUser) or create a new
+  // one on the spot. Unlike /register, this is never "closed" once other users exist —
+  // Google has already done the identity verification, so a fresh Google sign-in is treated
+  // as a normal self-service signup rather than the local-password bootstrap-only flow.
+  router.post("/auth/google", async (req: Request, res: Response) => {
+    const { credential } = req.body as GoogleLoginRequest;
+
+    if (!credential || typeof credential !== "string") {
+      const body: ApiResponse = { success: false, error: "Missing 'credential' field" };
+      res.status(400).json(body);
+      return;
+    }
+
+    const rateLimitKey = `google:${req.ip}`;
+    const { limited, retryAfterMs } = checkRateLimit(rateLimitKey);
+    if (limited) {
+      const body: ApiResponse = {
+        success: false,
+        error: `Too many sign-in attempts. Try again in ${Math.ceil((retryAfterMs ?? 0) / 1000)}s.`,
+      };
+      res.status(429).json(body);
+      return;
+    }
+
+    let identity;
+    try {
+      identity = await verifyGoogleIdToken(credential);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const body: ApiResponse = { success: false, error: `Google sign-in failed: ${message}` };
+      res.status(401).json(body);
+      return;
+    }
+
+    let user = findGoogleUser(identity.googleId, identity.email);
+
+    if (user) {
+      // Backfill googleId the first time an admin-pre-created-by-email account signs in.
+      if (!user.googleId) user.googleId = identity.googleId;
+    } else {
+      // Any username collision with a "local" account of the same handle is avoided by
+      // deriving the username from the email's local part plus a short disambiguator.
+      const base = identity.email.split("@")[0].replace(/[^a-zA-Z0-9_.-]/g, "") || "google-user";
+      let username = base;
+      let n = 1;
+      while (storedUsers.some((u) => u.username === username)) {
+        username = `${base}${n++}`;
+      }
+
+      user = {
+        id: String(nextUserId++),
+        username,
+        passwordHash: "",
+        // The very first account on a fresh install becomes admin regardless of provider,
+        // same bootstrap rule /register uses for local accounts.
+        role: storedUsers.length === 0 ? "admin" : "user",
+        createdAt: new Date().toISOString(),
+        authProvider: "google",
+        googleId: identity.googleId,
+        email: identity.email,
+      };
+      storedUsers.push(user);
+    }
+
+    persistUsers(storedUsers);
+
+    const token = generateToken(user.id, user.username, user.role);
+    const data: LoginResponse = { token, userId: user.id, username: user.username, role: user.role };
+    const body: ApiResponse<LoginResponse> = { success: true, data };
+    res.json(body);
+  });
+
   // ─── User count (no auth required — used by UI to check if registration is needed) ──
   router.get("/users/count", (_req: Request, res: Response) => {
     const body: ApiResponse<{ count: number }> = { success: true, data: { count: storedUsers.length } };
@@ -860,19 +1061,70 @@ export function createRouter(): Router {
   // List all users
   router.get("/users", requireAdmin, (_req: Request, res: Response) => {
     // Return users without password hashes
-    const safeUsers: User[] = storedUsers.map(({ id, username, role, createdAt }) => ({
+    const safeUsers: User[] = storedUsers.map(({ id, username, role, createdAt, authProvider, email }) => ({
       id,
       username,
       role,
       createdAt,
+      authProvider,
+      email,
     }));
     const body: ApiResponse<User[]> = { success: true, data: safeUsers };
     res.json(body);
   });
 
-  // Create a new user (admin only — protected by authMiddleware)
+  // Create a new user (admin only — protected by authMiddleware). Supports two shapes:
+  //   authProvider "local" (default): username + password, same as before.
+  //   authProvider "google": email only — no password is set. The account is inert (can't log
+  //   in) until whoever owns that Google address signs in via POST /auth/google, which matches
+  //   them to this pre-created record by email and backfills its googleId.
   router.post("/users", requireAdmin, (req: Request, res: Response) => {
-    const { username, password, role } = req.body as CreateUserRequest;
+    const { username, password, role, authProvider, email } = req.body as CreateUserRequest;
+
+    if (authProvider === "google") {
+      if (!email || typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+        const body: ApiResponse = { success: false, error: "A valid 'email' field is required for a Google account" };
+        res.status(400).json(body);
+        return;
+      }
+      const normalizedEmail = email.trim().toLowerCase();
+      if (storedUsers.some((u) => u.authProvider === "google" && u.email?.toLowerCase() === normalizedEmail)) {
+        const body: ApiResponse = { success: false, error: "A Google account with that email is already added" };
+        res.status(409).json(body);
+        return;
+      }
+
+      const base = normalizedEmail.split("@")[0].replace(/[^a-zA-Z0-9_.-]/g, "") || "google-user";
+      let derivedUsername = base;
+      let n = 1;
+      while (storedUsers.some((u) => u.username === derivedUsername)) {
+        derivedUsername = `${base}${n++}`;
+      }
+
+      const newGoogleUser: StoredUser = {
+        id: String(nextUserId++),
+        username: derivedUsername,
+        passwordHash: "",
+        role: role === "admin" ? "admin" : "user",
+        createdAt: new Date().toISOString(),
+        authProvider: "google",
+        email: normalizedEmail,
+      };
+      storedUsers.push(newGoogleUser);
+      persistUsers(storedUsers);
+
+      const safeGoogleUser: User = {
+        id: newGoogleUser.id,
+        username: newGoogleUser.username,
+        role: newGoogleUser.role,
+        createdAt: newGoogleUser.createdAt,
+        authProvider: "google",
+        email: newGoogleUser.email,
+      };
+      const body: ApiResponse<User> = { success: true, data: safeGoogleUser };
+      res.status(201).json(body);
+      return;
+    }
 
     if (!username || typeof username !== "string" || username.trim().length === 0) {
       const body: ApiResponse = { success: false, error: "Missing or empty 'username' field" };
@@ -899,6 +1151,7 @@ export function createRouter(): Router {
       passwordHash: hashPassword(password),
       role: role === "admin" ? "admin" : "user",
       createdAt: new Date().toISOString(),
+      authProvider: "local",
     };
 
     storedUsers.push(newUser);
@@ -909,6 +1162,7 @@ export function createRouter(): Router {
       username: newUser.username,
       role: newUser.role,
       createdAt: newUser.createdAt,
+      authProvider: "local",
     };
     const body: ApiResponse<User> = { success: true, data: safeUser };
     res.status(201).json(body);

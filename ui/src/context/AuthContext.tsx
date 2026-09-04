@@ -11,6 +11,7 @@ interface AuthState {
 interface AuthContextValue extends AuthState {
   login: (username: string, password: string) => Promise<void>;
   register: (username: string, password: string) => Promise<void>;
+  loginWithGoogle: (credential: string) => Promise<void>;
   logout: () => void;
 }
 
@@ -45,6 +46,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     persist(res.token, res.userId, res.username, res.role);
   }, []);
 
+  const loginWithGoogle = useCallback(async (credential: string) => {
+    const res = await api.loginWithGoogle(credential);
+    persist(res.token, res.userId, res.username, res.role);
+  }, []);
+
   const logout = useCallback(() => {
     api.logout().catch(() => {});
     clearLocalSession();
@@ -66,7 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   return (
-    <AuthContext.Provider value={{ ...state, login, register, logout }}>
+    <AuthContext.Provider value={{ ...state, login, register, loginWithGoogle, logout }}>
       {children}
     </AuthContext.Provider>
   );

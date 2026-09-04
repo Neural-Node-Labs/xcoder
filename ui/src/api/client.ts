@@ -199,6 +199,41 @@ export interface User {
   username: string;
   role: "admin" | "user";
   createdAt: string;
+  authProvider?: "local" | "google";
+  email?: string;
+}
+
+export interface PlatformToolEntry {
+  name: string;
+  description: string;
+  source: "builtin" | "integration";
+}
+
+export interface PlatformIntegrationEntry {
+  id: string;
+  name: string;
+  description: string;
+  connected: boolean;
+}
+
+export interface CodegraphStatus {
+  bundled: boolean;
+  running: boolean;
+  port?: number;
+  baseUrl?: string;
+  startedAt?: string;
+  uiAvailable: boolean;
+}
+
+export interface CodegraphSsoSession {
+  apiUrl: string;
+  token: string;
+  user: { id: number; username: string; role: string; api_key: string };
+}
+
+export interface GoogleSignInConfig {
+  enabled: boolean;
+  clientId: string;
 }
 
 export interface TelemetryEntry {
@@ -214,6 +249,8 @@ export const api = {
   logout: () => post<void>("/logout"),
   register: (username: string, password: string) => post<LoginResponse>("/register", { username, password }),
   userCount: () => get<{ count: number }>("/users/count"),
+  googleSignInConfig: () => get<GoogleSignInConfig>("/auth/google/config"),
+  loginWithGoogle: (credential: string) => post<LoginResponse>("/auth/google", { credential }),
 
   health: () => get<HealthResponse>("/health"),
   engines: () => get<EnginesResponse>("/engines"),
@@ -243,9 +280,21 @@ export const api = {
 
   users: () => get<User[]>("/users"),
   createUser: (username: string, password: string, role?: "admin" | "user") =>
-    post<User>("/users", { username, password, role }),
+    post<User>("/users", { username, password, role, authProvider: "local" as const }),
+  createGoogleUser: (email: string, role?: "admin" | "user") =>
+    post<User>("/users", { email, role, authProvider: "google" as const }),
   updateUser: (id: string, body: { username?: string; role?: "admin" | "user" }) => put<User>(`/users/${id}`, body),
   deleteUser: (id: string) => del<void>(`/users/${id}`),
+
+  platformTools: () => get<{ tools: PlatformToolEntry[] }>("/platform/tools"),
+  platformIntegrations: () => get<{ integrations: PlatformIntegrationEntry[] }>("/platform/integrations"),
+  connectCodegraph: (baseUrl: string, apiKey: string, defaultProjectId?: string) =>
+    post<{ connected: true }>("/platform/integrations/codegraph", { baseUrl, apiKey, defaultProjectId }),
+  disconnectCodegraph: () => del<{ connected: false }>("/platform/integrations/codegraph"),
+  codegraphStatus: () => get<CodegraphStatus>("/platform/integrations/codegraph/status"),
+  startBundledCodegraph: () => post<CodegraphStatus>("/platform/integrations/codegraph/start"),
+  stopBundledCodegraph: () => post<CodegraphStatus>("/platform/integrations/codegraph/stop"),
+  codegraphSso: () => get<CodegraphSsoSession | null>("/platform/integrations/codegraph/sso"),
 
   projects: (allProjects?: boolean) => get<Project[]>(`/projects${allProjects ? "?all=true" : ""}`),
   createProject: (name: string) => post<Project>("/projects", { name }),

@@ -138,3 +138,33 @@ registerEngine("sdlc", ({ llm, telemetry, io, options }) => {
   };
   return new SdlcEngine(llm, telemetry, sdlcOpts);
 });
+
+// The "Assistant" orchestration engine: a lightweight, chat-first engine for direct
+// conversation and small one-off tasks, driven from the new "Chat" tab under Run Task.
+// Unlike "sdlc"/"swarm" it does no DAG planning, WBS breakdown, or multi-agent delegation —
+// it's the same bare ReAct loop as "simple" (see above), just pointed at a system prompt
+// written for back-and-forth conversation rather than "complete this SDLC deliverable and
+// stop". It shares the exact same tool dispatcher as every other engine, so it can call
+// any registered tool — including codegraph_tool (once CodeGraph is connected under
+// Platform > Integrations) and mcp_tool (any local MCP server) — plus the same skill
+// selection SimpleReactEngine already performs, giving it uniform access to tools, skills,
+// and MCP without a bespoke code path.
+const ASSISTANT_SYSTEM_PROMPT = `You are Assistant, xcoder's conversational engine. You handle direct chat and small,
+self-contained requests — answering questions, explaining code, doing quick lookups, and
+running the occasional one-off tool call — rather than full multi-stage SDLC work (that's
+what the "sdlc"/"swarm" engines are for). You have the same tools every xcoder engine has:
+workspace search and file tools, run_command_tool, github_tool, codegraph_tool (structural
+code-graph queries, when CodeGraph is connected), and mcp_tool (call any local MCP server's
+tools). Use a tool only when the request actually calls for it — for plain conversation,
+just reply in plain text. Keep replies conversational and to the point.`;
+registerEngine("assistant", ({ llm, telemetry, io, options }) => {
+  const assistantOpts: SimpleReactEngineOptions = {
+    maxIterations: options?.maxIterations,
+    cwd: options?.cwd,
+    consoleThoughts: options?.consoleThoughts,
+    fullContextToken: options?.fullContextToken,
+    systemPrompt: ASSISTANT_SYSTEM_PROMPT,
+    io,
+  };
+  return new SimpleReactEngine(llm, telemetry, assistantOpts);
+});

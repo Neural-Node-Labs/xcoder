@@ -1,6 +1,8 @@
 import express from "express";
 import cors from "cors";
 import { createRouter } from "./routes.js";
+import { codegraphProxyMiddleware } from "./codegraphProxy.js";
+import { CODEGRAPH_UI_DIST } from "./codegraphProcess.js";
 // Auth is always enabled — no more static admin credentials
 
 export interface ApiServerOptions {
@@ -51,6 +53,15 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
     .map((o) => o.trim())
     .filter(Boolean);
   app.use(cors(corsOrigins.length > 0 ? { origin: corsOrigins } : { origin: false }));
+
+  // Embedded CodeGraph Explorer (integrations/codegraph/codegraph-ui, built to dist/) and its
+  // API proxy. Mounted BEFORE express.json() so proxied requests — including large project .zip
+  // uploads — stream through untouched rather than being buffered/JSON-parsed first. Both are
+  // no-ops (static: 404s until built; proxy: 503s until CodeGraph is connected) rather than
+  // errors when CodeGraph isn't set up, so this is always safe to mount.
+  app.use("/codegraph-ui", express.static(CODEGRAPH_UI_DIST));
+  app.use("/codegraph-api", codegraphProxyMiddleware());
+
   app.use(express.json({ limit: "1mb" }));
 
   // Routes
