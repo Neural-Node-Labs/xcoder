@@ -104,15 +104,25 @@ export function CodeGraphExplorerPage() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
 
-  useEffect(() => {
+  const refreshProjects = useCallback(() => {
     api
       .projects()
       .then((ps) => {
         setProjects(ps);
-        setSelectedProjectId((prev) => prev ?? ps.find((p) => p.active)?.id ?? ps[0]?.id);
+        // Always defer to the server's active project when it's known, rather than only filling
+        // in a selection the first time — otherwise switching the active project on another page
+        // (Workspace, Projects) leaves this page showing whatever was selected here previously,
+        // which is the "workspace doesn't match" mismatch this page kept running into.
+        setSelectedProjectId((prev) => ps.find((p) => p.active)?.id ?? prev ?? ps[0]?.id);
       })
       .catch(() => {});
   }, []);
+
+  useEffect(refreshProjects, [refreshProjects]);
+  // Returning to this page: another page (Workspace, Projects) may have activated a different
+  // project while this one sat hidden-but-mounted. Re-sync so the selector — and the workspace
+  // "Index this workspace" indexes — reflect the project actually active now.
+  useOnActivate(refreshProjects);
 
   async function indexWorkspace() {
     setIndexing(true);
@@ -317,7 +327,18 @@ export function CodeGraphExplorerPage() {
           {projects.length > 0 && (
             <select
               value={selectedProjectId ?? ""}
-              onChange={(e) => setSelectedProjectId(e.target.value)}
+              onChange={(e) => {
+                const id = e.target.value;
+                setSelectedProjectId(id);
+                // Persist as the server-side "active" project — the same call ProjectsPage and
+                // WorkspacePage make — so this page's notion of "current workspace" stays in
+                // sync with theirs instead of each page independently defaulting to whatever the
+                // server last thought was active.
+                api
+                  .activateProject(id)
+                  .then(() => setProjects((ps) => ps.map((p) => ({ ...p, active: p.id === id }))))
+                  .catch(() => {});
+              }}
               style={{ width: "auto" }}
               title="xcoder project to index"
             >

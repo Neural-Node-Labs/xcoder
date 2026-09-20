@@ -36,13 +36,19 @@ export function WorkspacePage() {
   const [cgIndexing, setCgIndexing] = useState(false);
   const [cgResult, setCgResult] = useState<{ ok: boolean; message: string } | null>(null);
 
-  useEffect(() => {
+  const refreshProjects = useCallback(() => {
     api.projects().then((ps) => {
       setProjects(ps);
+      // Defer to the server's active project whenever it's known (not just on first mount) — if
+      // another page (CodeGraph Explorer, Projects) activated a different project while this one
+      // sat hidden-but-mounted, this page should pick that up instead of continuing to browse
+      // whatever project happened to be active last time it loaded.
       const active = ps.find((p) => p.active);
-      setProjectId(active?.id ?? ps[0]?.id);
+      setProjectId((prev) => active?.id ?? prev ?? ps[0]?.id);
     }).catch(() => {});
   }, []);
+
+  useEffect(refreshProjects, [refreshProjects]);
 
   const refreshList = useCallback(() => {
     setLoadingList(true);
@@ -61,7 +67,7 @@ export function WorkspacePage() {
   // added/removed, a task wrote files). Deliberately leaves the open file and its unsaved edits
   // alone — that's exactly the state this page is kept mounted to preserve.
   useOnActivate(() => {
-    api.projects().then(setProjects).catch(() => {});
+    refreshProjects();
     refreshList();
   });
 
@@ -71,6 +77,11 @@ export function WorkspacePage() {
     setOpenFile(null);
     setZipResult(null);
     setZipError(null);
+    // Persist this as the server-side "active" project (same call ProjectsPage makes). Without
+    // this, switching here only changed local state — the server, and any other page that reads
+    // api.projects() and defaults to the active one (like CodeGraph Explorer), would still see
+    // the old project, so the "current workspace" silently disagreed between pages.
+    api.activateProject(id).then(() => setProjects((ps) => ps.map((p) => ({ ...p, active: p.id === id })))).catch(() => {});
   }
 
   function enterDir(p: string) {
