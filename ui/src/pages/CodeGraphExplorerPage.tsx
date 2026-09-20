@@ -103,6 +103,9 @@ export function CodeGraphExplorerPage() {
 
   const [projects, setProjects] = useState<Project[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
+  // Whether the currently-selected xcoder project has a matching CodeGraph project already:
+  // undefined = not checked yet, null = checked, no match (never indexed), object = found.
+  const [cgMatch, setCgMatch] = useState<{ id: number; name: string; status: string } | null | undefined>(undefined);
 
   const refreshProjects = useCallback(() => {
     api
@@ -124,6 +127,37 @@ export function CodeGraphExplorerPage() {
   // "Index this workspace" indexes — reflect the project actually active now.
   useOnActivate(refreshProjects);
 
+  // The embedded Explorer only ever switches project when xcoder writes "codegraph_project_id"
+  // into localStorage and remounts the iframe — previously that only happened right after
+  // clicking "Index this workspace", so picking a *different* xcoder project here left the
+  // Explorer showing whatever project had been indexed last. Whenever the selected xcoder
+  // project changes, look up whether a same-named CodeGraph project already exists and, if so,
+  // point the iframe at it — the same fix "Index this workspace" already applies, just without
+  // requiring a re-index every time.
+  useEffect(() => {
+    if (!status?.running || !status.uiAvailable) return;
+    const project = projects.find((p) => p.id === selectedProjectId);
+    if (!project) return;
+    let cancelled = false;
+    api
+      .codegraphProjectForName(project.name)
+      .then(({ project: match }) => {
+        if (cancelled) return;
+        setCgMatch(match);
+        if (match) {
+          const stored = localStorage.getItem("codegraph_project_id");
+          if (stored !== String(match.id)) {
+            localStorage.setItem("codegraph_project_id", String(match.id));
+            setIframeKey((k) => k + 1);
+          }
+        }
+      })
+      .catch(() => !cancelled && setCgMatch(undefined));
+    return () => {
+      cancelled = true;
+    };
+  }, [status?.running, status?.uiAvailable, selectedProjectId, projects]);
+
   async function indexWorkspace() {
     setIndexing(true);
     setIndexError(null);
@@ -137,6 +171,7 @@ export function CodeGraphExplorerPage() {
       localStorage.setItem("codegraph_project_id", String(result.codegraphProjectId));
       setIframeKey((k) => k + 1);
       setIndexResult(`Indexed "${result.codegraphProjectName}" — ${result.extractedFiles} file(s).`);
+      setCgMatch({ id: result.codegraphProjectId, name: result.codegraphProjectName, status: "ready" });
     } catch (err) {
       setIndexError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -361,6 +396,12 @@ export function CodeGraphExplorerPage() {
         </div>
         {indexResult && <span className="badge badge-green">{indexResult}</span>}
         {indexError && <span className="badge badge-red">{indexError}</span>}
+        {!indexResult && !indexError && cgMatch === null && status?.running && status.uiAvailable && (
+          <span className="badge badge-amber">
+            This project hasn't been indexed into CodeGraph yet — the Explorer below may be showing a different project.
+            Click "Index this workspace".
+          </span>
+        )}
       </div>
       {renderBody()}
     </div>

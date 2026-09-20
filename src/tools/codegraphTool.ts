@@ -121,18 +121,27 @@ function zipWorkspace(root: string): Promise<string> {
   });
 }
 
-interface CodegraphProject {
+export interface CodegraphProject {
   id: number;
   name: string;
   status: string;
+}
+
+/** Looks up an existing CodeGraph project by exact name, without creating one. Used to let the
+ *  xcoder UI find "is there already a CodeGraph project for this xcoder project" so it can point
+ *  the embedded Explorer at it — without triggering a full re-index just to check. */
+export async function findProjectByName(name: string): Promise<CodegraphProject | null> {
+  const conn = getCodegraphConnection();
+  if (!conn) return null;
+  const existing = (await codegraphFetch("/api/projects", {})) as { results: CodegraphProject[] };
+  return existing.results?.find((p) => p.name === name) ?? null;
 }
 
 async function findOrCreateProject(name: string): Promise<CodegraphProject> {
   const conn = getCodegraphConnection();
   if (!conn) throw new Error("CodeGraph is not connected. An admin needs to connect it under Platform > Integrations first.");
 
-  const existing = (await codegraphFetch("/api/projects", {})) as { results: CodegraphProject[] };
-  const match = existing.results?.find((p) => p.name === name);
+  const match = await findProjectByName(name);
   if (match) return match;
 
   const res = await fetch(`${conn.baseUrl}/api/projects`, {

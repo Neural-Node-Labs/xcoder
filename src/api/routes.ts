@@ -20,7 +20,7 @@ import { listProjects, getProject, getActiveProject } from "./projectStore.js";
 import { hasStoredApiKey, setStoredApiKey, clearStoredApiKey, applyStoredApiKey } from "./llmKeyStore.js";
 import { getCodegraphConnection, isCodegraphConnected, setCodegraphConnection } from "./codegraphKeyStore.js";
 import { getStatus as getCodegraphStatus, retryAutoConnectIfNeeded, startBundledCodegraph, stopBundledCodegraph, disconnectCodegraph, getSsoSession } from "./codegraphProcess.js";
-import { runCodegraphTool } from "../tools/codegraphTool.js";
+import { runCodegraphTool, findProjectByName } from "../tools/codegraphTool.js";
 import { XCODER_PROXY_COOKIE } from "./codegraphProxy.js";
 import { TOOL_SCHEMAS } from "../tools/toolSchemas.js";
 import { runSecurityTool } from "../tools/securityOpsTool.js";
@@ -933,6 +933,33 @@ export function createRouter(): Router {
     try {
       const result = await runCodegraphTool({ action: "index_workspace", projectName }, cwd);
       const body: ApiResponse = { success: true, data: JSON.parse(result) };
+      res.json(body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const body: ApiResponse = { success: false, error: message };
+      res.status(500).json(body);
+    }
+  });
+
+  // Look up whether a CodeGraph project already exists for a given name, without creating or
+  // indexing anything. Lets the CodeGraph Explorer page find "is the xcoder project currently
+  // selected already indexed in CodeGraph" so it can point the embedded Explorer at it whenever
+  // the selected xcoder project changes — not only right after an explicit "Index this
+  // workspace" click, which is what previously left the embedded Explorer showing whichever
+  // project was indexed last, regardless of which xcoder project/workspace was now selected.
+  router.get("/platform/integrations/codegraph/project-for-name", async (req: Request, res: Response) => {
+    const name = typeof req.query.name === "string" ? req.query.name : undefined;
+    if (!name) {
+      const body: ApiResponse = { success: false, error: "Missing 'name' query parameter" };
+      res.status(400).json(body);
+      return;
+    }
+    try {
+      const project = await findProjectByName(name);
+      const body: ApiResponse<{ project: { id: number; name: string; status: string } | null }> = {
+        success: true,
+        data: { project },
+      };
       res.json(body);
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

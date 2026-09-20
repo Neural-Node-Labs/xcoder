@@ -435,6 +435,10 @@ export const api = {
       "/platform/integrations/codegraph/index-workspace",
       { projectId, projectName }
     ),
+  codegraphProjectForName: (name: string) =>
+    get<{ project: { id: number; name: string; status: string } | null }>(
+      `/platform/integrations/codegraph/project-for-name?name=${encodeURIComponent(name)}`
+    ),
 
   securityOpsAllowlist: () => get<{ allowlist: string[] }>("/security-ops/allowlist"),
   updateSecurityOpsAllowlist: (entries: string[]) => put<{ allowlist: string[] }>("/security-ops/allowlist", { entries }),
