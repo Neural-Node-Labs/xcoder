@@ -51,7 +51,13 @@ class ApiError extends Error {
  * Pass a FormData instance as `body` (e.g. for file uploads) and it will be
  * sent as multipart/form-data instead of JSON. */
 export async function apiFetch(path, { method = "GET", body, params } = {}) {
-  const url = new URL(getApiUrl() + path);
+  // getApiUrl() is a relative, same-origin proxy path ("/codegraph-api") when embedded inside
+  // xcoder (see codegraphProcess.ts's getSsoSession) — only an externally-configured instance
+  // would ever be a full absolute URL. new URL() with a single argument requires an absolute
+  // URL and throws "Failed to construct 'URL': Invalid URL" on a bare path, so pass the current
+  // origin as the base; this resolves correctly whether getApiUrl() is relative or already
+  // absolute (an absolute second argument is simply ignored as the base).
+  const url = new URL(getApiUrl() + path, window.location.origin);
   if (params) {
     Object.entries(params).forEach(([k, v]) => {
       if (v !== undefined && v !== null && v !== "") url.searchParams.set(k, v);
