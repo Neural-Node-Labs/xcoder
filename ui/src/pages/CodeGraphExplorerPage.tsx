@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
-import { api, CodegraphStatus } from "../api/client";
+import { api, CodegraphStatus, Project } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { usePageActive, useOnActivate } from "../context/PageActive";
 
 /**
  * Embeds the bundled CodeGraph Explorer (integrations/codegraph/codegraph-ui, served
@@ -12,33 +13,56 @@ import { useAuth } from "../context/AuthContext";
  * — writing those keys here, before the iframe mounts, is enough to sign the embedded app in.
  * No cross-frame access or postMessage bridge needed.
  *
- * This page is reachable directly from the sidebar (Platform > CodeGraph) rather than only via
- * a button buried on the Tools page, so it needs to handle every state on its own: not
- * installed, installed but stopped, starting, running-but-you're-not-an-admin (only admins get
- * an SSO session today), and running-and-ready.
+ * Two rules this page follows, both learned from it rendering as an empty panel:
+ *  1. Every state gets its own explicit message — never a bare spinner or an iframe pointed at
+ *     something that isn't there. "Blank" is the one outcome that gives nobody a next step.
+ *  2. The "Index this workspace" controls don't depend on the Explorer iframe (or on the user
+ *     being an admin). Indexing goes through xcoder's own API, so it works — and reports a clear
+ *     error if CodeGraph isn't connected — whether or not the Explorer itself managed to render.
  */
 export function CodeGraphExplorerPage() {
   const { role } = useAuth();
   const isAdmin = role === "admin";
 
   const [status, setStatus] = useState<CodegraphStatus | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
   const [ssoError, setSsoError] = useState<string | null>(null);
   const [iframeReady, setIframeReady] = useState(false);
+  const [iframeKey, setIframeKey] = useState(0);
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState<string | null>(null);
 
   const refreshStatus = useCallback(() => {
-    api.codegraphStatus().then(setStatus).catch(() => setStatus(null));
+    api
+      .codegraphStatus()
+      .then((s) => {
+        setStatus(s);
+        setStatusError(null);
+      })
+      .catch((err) => setStatusError(err instanceof Error ? err.message : String(err)));
   }, []);
 
   useEffect(() => {
     refreshStatus();
   }, [refreshStatus]);
 
-  // Once the bundled server is confirmed running, admins pull an SSO session and sign the
-  // embedded iframe in via localStorage before it mounts.
+  // Keep checking until CodeGraph is up. Under docker-compose, codegraph-api often finishes
+  // booting a few seconds AFTER this page is first opened, and the server retries its connection
+  // whenever this status endpoint is hit — so polling is what turns "not yet" into "ready"
+  // without the user having to reload.
+  const running = status?.running ?? false;
+  const pageActive = usePageActive();
   useEffect(() => {
-    if (!status?.running || !isAdmin) return;
+    if (running || !pageActive) return;
+    const id = setInterval(refreshStatus, 3000);
+    return () => clearInterval(id);
+  }, [running, pageActive, refreshStatus]);
+  useOnActivate(refreshStatus);
+
+  // Once CodeGraph is confirmed running, admins pull an SSO session and sign the embedded iframe
+  // in via localStorage before it mounts.
+  useEffect(() => {
+    if (!status?.running || !status.uiAvailable || !isAdmin) return;
     let cancelled = false;
     setSsoError(null);
     api
@@ -58,7 +82,7 @@ export function CodeGraphExplorerPage() {
     return () => {
       cancelled = true;
     };
-  }, [status?.running, isAdmin]);
+  }, [status?.running, status?.uiAvailable, isAdmin]);
 
   async function start() {
     setStarting(true);
@@ -73,33 +97,132 @@ export function CodeGraphExplorerPage() {
     }
   }
 
-  if (!status) {
+  const [indexing, setIndexing] = useState(false);
+  const [indexResult, setIndexResult] = useState<string | null>(null);
+  const [indexError, setIndexError] = useState<string | null>(null);
+
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | undefined>(undefined);
+
+  useEffect(() => {
+    api
+      .projects()
+      .then((ps) => {
+        setProjects(ps);
+        setSelectedProjectId((prev) => prev ?? ps.find((p) => p.active)?.id ?? ps[0]?.id);
+      })
+      .catch(() => {});
+  }, []);
+
+  async function indexWorkspace() {
+    setIndexing(true);
+    setIndexError(null);
+    setIndexResult(null);
+    try {
+      const selected = projects.find((p) => p.id === selectedProjectId);
+      const result = await api.indexCodegraphWorkspace(selectedProjectId, selected?.name);
+      // Point the embedded Explorer at what was just indexed — it remembers its selected project
+      // in this same-origin localStorage key — and reload it so the graph shows up immediately
+      // rather than requiring a manual project switch inside the iframe.
+      localStorage.setItem("codegraph_project_id", String(result.codegraphProjectId));
+      setIframeKey((k) => k + 1);
+      setIndexResult(`Indexed "${result.codegraphProjectName}" — ${result.extractedFiles} file(s).`);
+    } catch (err) {
+      setIndexError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIndexing(false);
+    }
+  }
+
+  function notice(body: React.ReactNode) {
     return (
       <div className="card">
-        <div className="row text-2">
-          <span className="spinner" /> Checking CodeGraph status…
+        <div className="empty-state">
+          <div className="empty-state-icon">◈</div>
+          {body}
         </div>
       </div>
     );
   }
 
-  if (!status.bundled) {
-    return (
-      <div className="card">
-        <div className="empty-state">
-          <div className="empty-state-icon">◈</div>
-          This build wasn't packaged with the bundled CodeGraph source (integrations/codegraph/).
-          Connect an external instance instead from Platform &gt; Tools.
+  function renderBody() {
+    if (!status) {
+      if (statusError) {
+        return notice(
+          <>
+            Couldn't reach the xcoder API to check CodeGraph: {statusError}
+            <div style={{ marginTop: 14 }}>
+              <button className="btn btn-ghost" onClick={refreshStatus}>
+                ↺ Retry
+              </button>
+            </div>
+          </>
+        );
+      }
+      return (
+        <div className="card">
+          <div className="row text-2">
+            <span className="spinner" /> Checking CodeGraph status…
+          </div>
         </div>
-      </div>
-    );
-  }
+      );
+    }
 
-  if (!status.running) {
-    return (
-      <div className="card">
-        <div className="empty-state">
-          <div className="empty-state-icon">◈</div>
+    if (!status.running) {
+      // Docker deployment: a sibling codegraph-api service is expected. Explain where we are in
+      // connecting to it rather than showing a dead end.
+      if (status.configuredUrl) {
+        return notice(
+          <>
+            {status.connectError ? (
+              <>
+                <div>Couldn't connect to the CodeGraph service at <code className="mono">{status.configuredUrl}</code>.</div>
+                <pre className="badge badge-red" style={{ display: "block", marginTop: 12, textAlign: "left", whiteSpace: "pre-wrap" }}>
+                  {status.connectError}
+                </pre>
+                <div className="text-2" style={{ fontSize: 11, marginTop: 8 }}>
+                  Check that the <code className="mono">codegraph-api</code> container is running:{" "}
+                  <code className="mono">docker compose ps</code> and{" "}
+                  <code className="mono">docker compose logs codegraph-api</code>. This page keeps retrying automatically.
+                </div>
+              </>
+            ) : (
+              <div className="row" style={{ justifyContent: "center", gap: 8 }}>
+                <span className="spinner" /> Connecting to the CodeGraph service at{" "}
+                <code className="mono">{status.configuredUrl}</code>…
+              </div>
+            )}
+            {isAdmin && (
+              <div style={{ marginTop: 14 }}>
+                <button className="btn btn-primary" onClick={start} disabled={starting}>
+                  {starting ? <span className="spinner" /> : "↺ Connect now"}
+                </button>
+                {startError && (
+                  <pre className="badge badge-red" style={{ display: "block", marginTop: 12, textAlign: "left", whiteSpace: "pre-wrap" }}>
+                    {startError}
+                  </pre>
+                )}
+              </div>
+            )}
+          </>
+        );
+      }
+
+      if (!status.bundled) {
+        return notice(
+          <>
+            CodeGraph isn't connected, and this build has no CodeGraph service configured to connect to. Under
+            docker-compose, make sure the <code className="mono">codegraph-api</code> service is up (
+            <code className="mono">docker compose up -d codegraph-api codegraph-mcp</code>) and that the{" "}
+            <code className="mono">api</code> service has <code className="mono">XCODER_CODEGRAPH_URL</code> and{" "}
+            <code className="mono">XCODER_CODEGRAPH_ADMIN_PASSWORD</code> set. Otherwise, connect an external instance from
+            Platform &gt; Tools.
+          </>
+        );
+      }
+
+      return notice(
+        <>
           CodeGraph isn't running yet.
           {isAdmin ? (
             <div style={{ marginTop: 14 }}>
@@ -121,60 +244,104 @@ export function CodeGraphExplorerPage() {
           ) : (
             <div style={{ marginTop: 8, fontSize: 12 }}>Ask an admin to start it from this page or Platform &gt; Tools.</div>
           )}
-        </div>
-      </div>
-    );
-  }
+        </>
+      );
+    }
 
-  if (!isAdmin) {
-    return (
-      <div className="card">
-        <div className="empty-state">
-          <div className="empty-state-icon">◈</div>
-          CodeGraph is running on :{status.port}, but the embedded Explorer currently signs in
-          with a shared admin session, so only admins can open it here.
-          <div style={{ marginTop: 8, fontSize: 12 }}>
-            <code className="mono">codegraph_tool</code> is still available to every engine — try asking the Assistant in
-            Chat to search or trace dependencies for you.
+    if (!status.uiAvailable) {
+      return notice(
+        <>
+          CodeGraph is connected, but this build doesn't include the Explorer UI bundle, so there's nothing to embed. Indexing
+          above and <code className="mono">codegraph_tool</code> still work.
+          <div className="text-2" style={{ fontSize: 11, marginTop: 8 }}>
+            Local checkout: <code className="mono">npm run codegraph:ui:build</code>, then restart the server. Docker: rebuild
+            the <code className="mono">api</code> image (<code className="mono">docker compose build api</code>) — it builds the
+            Explorer in.
           </div>
-        </div>
-      </div>
-    );
-  }
+        </>
+      );
+    }
 
-  if (ssoError) {
-    return (
-      <div className="card">
-        <div className="empty-state">
-          <div className="empty-state-icon">◈</div>
+    if (!isAdmin) {
+      return notice(
+        <>
+          CodeGraph is running at {status.baseUrl}, but the embedded Explorer currently signs in with a shared admin session, so
+          only admins can open it here. You can still index your workspace above.
+          <div style={{ marginTop: 8, fontSize: 12 }}>
+            <code className="mono">codegraph_tool</code> is also available to every engine — try asking the Assistant in Chat to
+            search or trace dependencies for you.
+          </div>
+        </>
+      );
+    }
+
+    if (ssoError) {
+      return notice(
+        <>
           Couldn't sign in to CodeGraph: {ssoError}
           <div style={{ marginTop: 14 }}>
             <button className="btn btn-ghost" onClick={refreshStatus}>
               ↺ Retry
             </button>
           </div>
-        </div>
-      </div>
-    );
-  }
+        </>
+      );
+    }
 
-  if (!iframeReady) {
-    return (
-      <div className="card">
-        <div className="row text-2">
-          <span className="spinner" /> Signing in to CodeGraph…
+    if (!iframeReady) {
+      return (
+        <div className="card">
+          <div className="row text-2">
+            <span className="spinner" /> Signing in to CodeGraph…
+          </div>
         </div>
+      );
+    }
+
+    return (
+      <div className="card" style={{ padding: 0, overflow: "hidden", height: "calc(100vh - 260px)", minHeight: 360 }}>
+        <iframe
+          key={iframeKey}
+          src="/codegraph-ui/"
+          title="CodeGraph Explorer"
+          style={{ width: "100%", height: "100%", border: "none", display: "block" }}
+        />
       </div>
     );
   }
 
   return (
-    <div className="card" style={{ padding: 0, overflow: "hidden", height: "calc(100vh - 180px)" }}>
-      <iframe
-        src="/codegraph-ui/"
-        title="CodeGraph Explorer"
-        style={{ width: "100%", height: "100%", border: "none", display: "block" }}
-      />
+    <div>
+      <div className="row-between" style={{ marginBottom: 10, flexWrap: "wrap", gap: 8 }}>
+        <div className="row" style={{ gap: 8 }}>
+          {projects.length > 0 && (
+            <select
+              value={selectedProjectId ?? ""}
+              onChange={(e) => setSelectedProjectId(e.target.value)}
+              style={{ width: "auto" }}
+              title="xcoder project to index"
+            >
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                  {p.active ? " (active)" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          <button className="btn btn-sm btn-primary" onClick={indexWorkspace} disabled={indexing}>
+            {indexing ? <span className="spinner" /> : "⟳ Index this workspace"}
+          </button>
+          {status?.running && status.uiAvailable && isAdmin && (
+            <a className="btn btn-sm btn-ghost" href="/codegraph-ui/" target="_blank" rel="noreferrer">
+              ↗ Open in new tab
+            </a>
+          )}
+        </div>
+        {indexResult && <span className="badge badge-green">{indexResult}</span>}
+        {indexError && <span className="badge badge-red">{indexError}</span>}
+      </div>
+      {renderBody()}
     </div>
   );
 }

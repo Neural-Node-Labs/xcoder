@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePageActive, useOnActivate } from "../context/PageActive";
 import { api, WbsEntry, TaskHistoryEntry } from "../api/client";
 import { StatusBadge } from "../components/Badges";
 
@@ -11,15 +12,19 @@ export function WbsBoard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function loadTasks() {
     api
       .taskHistory(30)
       .then((r) => {
         setTasks(r.tasks);
-        if (r.tasks[0]) setTaskId(r.tasks[0].id);
+        // Only pick a default when nothing is selected — on re-activation, keep the user's pick.
+        setTaskId((cur) => cur || r.tasks[0]?.id || "");
       })
       .catch(() => {});
-  }, []);
+  }
+
+  useEffect(loadTasks, []);
+  useOnActivate(loadTasks);
 
   useEffect(() => {
     if (!taskId) return;

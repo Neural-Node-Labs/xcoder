@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef } from "react";
+import { usePageActive, useOnActivate } from "../context/PageActive";
 import { api, TelemetryEntry } from "../api/client";
 
 type LogFile = "thinking" | "llm" | "sys";
@@ -9,6 +10,7 @@ export function LogsPage() {
   const [autoRefresh, setAutoRefresh] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  const active = usePageActive();
 
   useEffect(() => {
     let cancelled = false;
@@ -23,13 +25,15 @@ export function LogsPage() {
         if (!cancelled) setError(e instanceof Error ? e.message : String(e));
       }
     }
+    // Kept mounted while hidden — don't poll the server for a page nobody is looking at.
+    if (!active) return;
     fetchLogs();
     const interval = autoRefresh ? setInterval(fetchLogs, 2500) : undefined;
     return () => {
       cancelled = true;
       if (interval) clearInterval(interval);
     };
-  }, [logFile, autoRefresh]);
+  }, [logFile, autoRefresh, active]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ block: "nearest" });

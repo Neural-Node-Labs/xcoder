@@ -38,7 +38,7 @@ This starts four containers:
 | Service    | Description                                         | Port |
 |------------|------------------------------------------------------|------|
 | `postgres` | PostgreSQL 16, with a named volume for persistence    | 5432 |
-| `ollama`   | Local LLM backend — pulls `qwen2.5-coder:0.5b` on first start | 11434 |
+| `ollama`   | Local LLM backend — `ollama-pull-model` pulls `granite4:1b` (default) plus alternates on first start | 11434 |
 | `api`      | xcoder HTTP API — waits for Postgres and Ollama, runs migrations, then serves | 3001 |
 | `ui`       | The dashboard, built and served via nginx (proxies `/api` to `api`) | 5173 |
 
@@ -132,18 +132,25 @@ transcript as context on each turn (see `ChatPanel.tsx`).
 
 ## MCP (Model Context Protocol)
 
-`mcp_tool` lets any engine call tools exposed by an external MCP server — the same way an
-editor like Claude Desktop would. It's a small, dependency-free client (see `src/tools/mcpTool.ts`)
-that speaks MCP's stdio JSON-RPC transport directly, so no `@modelcontextprotocol/sdk`
-dependency is needed. Two actions:
+`mcp_tool` lets any engine call tools exposed by an MCP server — the same way an editor like
+Claude Desktop would. It's a small, dependency-free client (see `src/tools/mcpTool.ts`) that
+speaks MCP's JSON-RPC protocol directly over two transports, so no `@modelcontextprotocol/sdk`
+dependency is needed:
+
+- **stdio** — spawns the server as a local subprocess, via `command` (+ optional `args`), e.g.
+  `npx @modelcontextprotocol/server-filesystem /some/dir`. Every call spawns a fresh process.
+- **streamable-http** — calls an already-running network MCP server instead, via `url`, e.g.
+  `http://codegraph-mcp:8900/mcp`. No process to spawn; each call is one self-contained POST.
+
+Two actions either way:
 
 - `action: "list"` — discover what tools a server offers and their input schema
 - `action: "call"` — invoke one, with `toolName` + `toolArgs`
 
-Point it at any MCP server via `command` (+ optional `args`), e.g. `npx
-@modelcontextprotocol/server-filesystem /some/dir`. The bundled CodeGraph MCP server (see
-below) has its own shortcut: `command: "codegraph-mcp"` resolves straight to it with the right
-interpreter and credentials, no path/args needed.
+The bundled CodeGraph MCP server (see below) has its own shortcut: `command: "codegraph-mcp"`
+resolves to whichever transport can actually reach it — the docker-compose `codegraph-mcp`
+service over the network, or a local stdio spawn — with the right credentials either way, no
+path/URL/args needed.
 
 ## Sign in with Google
 
@@ -195,21 +202,49 @@ be created by hand, and `xcoder purge` removes it entirely.
 
 xcoder ships the full CodeGraph system — a structural code-graph API, an MCP server, and a
 React Explorer UI — under `integrations/codegraph/`, not just a client pointed at a
-separately-hosted instance. From **Platform > Tools** in the dashboard:
+separately-hosted instance. It runs in one of two shapes depending on how you run xcoder:
+
+**docker-compose** (`docker compose up`): CodeGraph runs as its own `codegraph-api` and
+`codegraph-mcp` services (see `docker-compose.yml`) — xcoder's `api` container has no Python
+runtime, so this is the shape that works there. They start with the rest of the stack (no
+profile flag). `api` has no `depends_on` edge to them, so xcoder's core services never wait on
+CodeGraph: if it's slow or down, xcoder runs without it and the CodeGraph page says so and keeps
+retrying. The `api` image builds the Explorer UI in (with the `/codegraph-ui/` base path) and
+serves it at `/codegraph-ui`. To run without CodeGraph:
+`docker compose up --scale codegraph-api=0 --scale codegraph-mcp=0`. On startup, xcoder logs in to `codegraph-api` as its auto-seeded admin over the
+compose network and wires the resulting API key into `codegraph_tool` automatically; no URL or
+key to type in. `codegraph-mcp` runs its MCP server over a real network transport
+(`streamable-http`, not stdio — see below) so `mcp_tool` reaches it the same way.
+
+**Local dev** (`npm run serve`, no Docker), from **Platform > Tools** in the dashboard:
 
 1. One-time setup: `npm run codegraph:install` (creates a Python venv under
    `integrations/codegraph/codegraph/.venv` and installs CodeGraph's pinned dependencies).
-2. Click **Start bundled CodeGraph**. xcoder spawns the API server, authenticates as its
-   auto-seeded admin, and wires the resulting API key into `codegraph_tool` automatically — no
-   URL or key to type in.
+2. Click **Start bundled CodeGraph**. xcoder spawns the API server as a child process,
+   authenticates as its auto-seeded admin, and wires the resulting API key into `codegraph_tool`
+   automatically.
 3. Click **Open Explorer** for the full CodeGraph UI, embedded at `/codegraph-ui` and
    pre-authenticated via a same-origin SSO bridge.
 
-Every engine — including the chat-first `assistant` engine — gets `codegraph_tool` (full-text
-search, dependency/impact analysis, symbol path-finding) once it's running, plus `mcp_tool` can
-reach the bundled MCP server directly via `command: "codegraph-mcp"`. Prefer to run CodeGraph
-yourself (e.g. a shared team deployment)? Use "Advanced: connect an external instance instead"
-on the same page, or set `XCODER_CODEGRAPH_URL` / `XCODER_CODEGRAPH_API_KEY` — see `.env.example`.
+Either way, every engine — including the chat-first `assistant` engine — gets `codegraph_tool`
+once CodeGraph is connected:
+
+- **`action: "index_workspace"`** zips the current project (respecting the same exclusion rules
+  as the project-download route), uploads it to CodeGraph as a project, triggers indexing, and
+  sets it as the default project — do this first for a project that hasn't been indexed yet.
+  Also available as an **"Index this workspace"** button on the CodeGraph Explorer page for
+  people who'd rather not go through chat.
+- full-text search, dependency/impact analysis, and symbol path-finding once indexed.
+
+`mcp_tool` can reach the bundled MCP server via `command: "codegraph-mcp"` — it resolves to
+whichever transport can actually reach it: the `codegraph-mcp` service's `streamable-http`
+endpoint if `XCODER_CODEGRAPH_MCP_URL` is set (docker-compose does this for you), otherwise a
+local stdio spawn of the bundled server.
+
+Prefer to run CodeGraph yourself (e.g. an existing shared deployment)? Use "Advanced: connect an
+external instance instead" under Platform > Tools, or set `XCODER_CODEGRAPH_URL` /
+`XCODER_CODEGRAPH_API_KEY` — see `.env.example` for this and every other CodeGraph-related
+variable (admin password, ports, data dir, etc.) across all three deployment shapes.
 
 ## Try it with no API key at all
 

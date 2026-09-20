@@ -13,6 +13,65 @@ Severity scale: **CRITICAL** (exploitable now, direct account/data compromise or
 
 ## Fixed this pass
 
+### 0. CRITICAL — Middleware ordering left 16 routes entirely unauthenticated
+
+`createRouter()` (`src/api/routes.ts`) called `registerProjectRoutes(router)` and
+`registerPlanRoutes(router)` on its first two lines, while `router.use(authMiddleware)` sits
+roughly 190 lines further down. An Express `Router` dispatches its layers **in registration
+order**, so every route registered before that `use()` call sits in front of the auth
+middleware and never reaches it. All 9 `/projects/*` routes and all 7 `/plans/*` routes were
+therefore reachable by a completely anonymous caller — no token, no account, nothing.
+
+Confirmed against a real running server rather than by reading the code:
+
+```
+GET    /api/v1/projects                   -> 200  (full project list, no token)
+POST   /api/v1/projects                   -> 400  (handler ran; rejected on body, not on auth)
+POST   /api/v1/projects/:id/upload        -> handler ran
+GET    /api/v1/projects/:id/download      -> handler ran
+DELETE /api/v1/projects/:id/files         -> handler ran
+GET    /api/v1/plans                      -> 200
+```
+
+Impact: anonymous enumeration of every project on the platform, plus unauthenticated file
+**upload, download and delete** against project workspaces, and full read/write access to the
+plan store.
+
+Why it failed silently rather than erroring: those handlers resolve the caller through a local
+`authedUser(req)` helper that reads `req.user` and falls back to `{ userId: "", isAdmin: false }`
+when it is absent. With `authMiddleware` never having run, `req.user` is simply undefined, so
+requests did not throw — they executed as a blank pseudo-user. Ownership checks written as
+`project.userId === userId` then compared against `""`, and `getProject(..., { allowAnyOwner:
+isAdmin })` saw `isAdmin === false`, so the code looked like it was enforcing tenancy while
+having no authenticated identity to enforce it against.
+
+This is worth calling out as a class of bug distinct from finding #1 below. `authMiddleware`
+itself was always correct, and its unit tests passed throughout — the middleware simply was not
+in the request path for these routes. **No test of a middleware in isolation can detect that it
+was never mounted.** Only a test that exercises the assembled router can.
+
+**Fix**: both `register*Routes()` calls moved to immediately *after* `router.use(authMiddleware)`,
+with a comment at the original site explaining why they must not move back. Separately,
+`GET /engines` was public for the same reason (position, not intent) and has been moved behind
+auth — it is read only by the Dashboard and Settings pages, both post-login.
+
+**Verified**: new `src/api/__tests__/routeAuthCoverage.test.ts` walks the router's actual layer
+stack, fires a real unauthenticated HTTP request at **every** registered route, and asserts each
+one returns 401/403 unless it appears in an explicit `PUBLIC_ROUTES` allowlist (login, register,
+Google sign-in, logout, `/users/count`, `/auth/google/config`, `/health` — each with a stated
+reason). It repeats the sweep with a well-formed but unknown bearer token, since that exercises a
+different `authMiddleware` branch than a missing header, and asserts directly on layer *position*
+that the project/plan routers sit after the middleware. It also asserts `GET /health` stays
+public, because docker-compose's `api` healthcheck calls it unauthenticated and a 401 there would
+render the container permanently unhealthy.
+
+The test was confirmed to fail against the original ordering before the fix was applied: 3 of its
+6 cases fail, listing all 32 exposed method/path pairs. 6/6 pass after.
+
+The durable property is not the allowlist's current contents but its existence: a newly added
+route is protected by default, and making one public now requires a justified entry in a list
+that is read during review.
+
 ### 1. CRITICAL — Broken access control: any user could self-escalate to admin
 
 `GET/POST/PUT/DELETE /users` and `PUT/DELETE /settings/llm-key` had no role check at all —

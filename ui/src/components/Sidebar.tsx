@@ -1,6 +1,6 @@
 import { useAuth } from "../context/AuthContext";
 
-export type Page = "dashboard" | "wbs" | "history" | "skills" | "projects" | "tools" | "codegraph" | "logs" | "users" | "settings";
+export type Page = "dashboard" | "wbs" | "history" | "skills" | "projects" | "workspace" | "tools" | "codegraph" | "secops" | "logs" | "users" | "auditlog" | "settings";
 
 const NAV: { section: string; items: { key: Page; label: string; icon: string; adminOnly?: boolean }[] }[] = [
   {
@@ -18,13 +18,16 @@ const NAV: { section: string; items: { key: Page; label: string; icon: string; a
       { key: "skills", label: "Skills", icon: "◈" },
       { key: "tools", label: "Tools", icon: "▣" },
       { key: "codegraph", label: "CodeGraph", icon: "◉" },
+      { key: "secops", label: "Security Ops", icon: "◆" },
       { key: "projects", label: "Projects", icon: "▢" },
+      { key: "workspace", label: "Workspace", icon: "▤" },
     ],
   },
   {
     section: "Admin",
     items: [
       { key: "users", label: "Users", icon: "◍", adminOnly: true },
+      { key: "auditlog", label: "Audit log", icon: "▥", adminOnly: true },
       { key: "settings", label: "Settings", icon: "⚙" },
     ],
   },

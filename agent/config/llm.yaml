@@ -2,17 +2,19 @@
 # LLM backend configuration for the xcoder agent.
 # Default backend: Ollama, running locally/in-container -- no API key needed.
 #
-# This matches the `ollama` service already defined in docker-compose.yml, which pulls
-# qwen2.5-coder:0.5b on first start. Running via `docker compose up`, the api container
+# This matches the `ollama` service already defined in docker-compose.yml, whose
+# `ollama-pull-model` sidecar pulls granite4:1b (plus several alternates the Chat tab's model
+# picker offers) on first start. Running via `docker compose up`, the api container
 # reaches it at http://ollama:11434/v1 (the compose service name doubles as the DNS
 # hostname on the shared network). Running the CLI/API directly on the host instead
 # (outside Docker), point base_url at your local Ollama install instead:
 #   base_url: http://localhost:11434/v1
 #
-# max_tokens is set well below the model's window: qwen2.5-coder:0.5b is a small local/dev
-# model (32K context) meant for running the agent without any cloud key, not for
-# production-grade reasoning. Swap in a larger local model (or a cloud provider below) for
-# real workloads.
+# max_tokens is set well below the model's window: granite4:1b is a small local/dev model
+# meant for running the agent without any cloud key, not for production-grade reasoning. Swap
+# in a larger local model (or a cloud provider below) for real workloads. The Chat tab can
+# switch models per-request without editing this file; this value is the default everything
+# else uses.
 #
 # ─── Switching providers ────────────────────────────────────────────────────────
 # The active backend is whatever `provider` says here — any OpenAI-compatible provider
@@ -47,26 +49,26 @@
 provider: ollama
 base_url: http://ollama:11434/v1
 endpoint: /chat/completions
-model: qwen2.5-coder:0.5b
+model: granite4:1b
 api_key_env: OLLAMA_API_KEY
 max_tokens: 4096
 temperature: 0.0            # deterministic output for code/math tasks (this is a coding agent)
-thinking: false              # qwen2.5-coder:0.5b has no separate thinking-mode API
+thinking: false              # granite4:1b has no separate thinking-mode API
 
 # Per-skill overrides: every skill uses the same local model by default since there's only
-# one pulled by docker-compose. Point these at a stronger provider/model above if you need
-# deeper reasoning for RCA/Architect/Pentester work.
+# one default pulled by docker-compose. Point these at a stronger provider/model above if you
+# need deeper reasoning for RCA/Architect/Pentester work.
 overrides:
   rca:
-    model: qwen2.5-coder:0.5b
+    model: granite4:1b
   architect:
-    model: qwen2.5-coder:0.5b
+    model: granite4:1b
   pentester:
-    model: qwen2.5-coder:0.5b
+    model: granite4:1b
 
 # Fallback provider if Ollama is unreachable or the model isn't pulled yet.
 fallback:
   provider: ollama
   base_url: http://ollama:11434/v1
-  model: qwen2.5-coder:0.5b
+  model: granite4:1b
   api_key_env: OLLAMA_API_KEY

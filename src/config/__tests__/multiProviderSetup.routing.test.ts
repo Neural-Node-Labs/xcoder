@@ -74,7 +74,7 @@ describe("multi-provider routing contract (loadConfig)", () => {
     const doc = yaml.load(readFileSync(LLM_YAML, "utf-8")) as LlmConfig;
     expect(doc.provider).toBe("ollama");
     expect(doc.base_url).toBe("http://ollama:11434/v1");
-    expect(doc.model).toBe("qwen2.5-coder:0.5b");
+    expect(doc.model).toBe("granite4:1b");
     expect(doc.fallback?.provider).toBe("ollama");
   });
 

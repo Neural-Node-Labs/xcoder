@@ -1,7 +1,10 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
+import { usePageActive, useOnActivate } from "../context/PageActive";
 import { api, ChatResponse, EnginesResponse, Project } from "../api/client";
-import { EngineBadge, HealthScore } from "../components/Badges";
+import { HealthScore } from "../components/Badges";
 import { ChatPanel } from "../components/ChatPanel";
+import { useSpeechRecognition, useSpeechSynthesis, useUiSounds } from "../hooks/useSpeech";
+import { VoiceButton, SpeakToggle, SoundToggle, InterimTranscript } from "../components/VoiceControls";
 
 type RunState =
   | { phase: "idle" }
@@ -11,8 +14,27 @@ type RunState =
   | { phase: "done"; response: ChatResponse | { result: string; iterations: number; limitation?: string; continueRequested?: boolean; iterationMaxReached?: boolean } }
   | { phase: "error"; message: string };
 
+/** Short spoken status for the Task tab, used only when "read replies aloud" is on. Kept
+ *  deliberately terse: these announce a state change, they don't narrate the result — the
+ *  result itself is spoken separately when the run finishes. */
+function spokenStatusFor(run: RunState): string | null {
+  switch (run.phase) {
+    case "awaiting-approval":
+      return "The plan is ready for your approval.";
+    case "error":
+      return `The task failed. ${run.message}`;
+    default:
+      return null;
+  }
+}
+
 export function Dashboard() {
   const [tab, setTab] = useState<"task" | "chat">("task");
+  // Chat mounts the first time it's opened and then stays mounted (hidden) when you switch to the
+  // Task tab — its transcript lives in ChatPanel's own state, so unmounting it wiped the
+  // conversation every time you toggled tabs.
+  const [chatOpened, setChatOpened] = useState(false);
+  const pageActive = usePageActive();
   const [task, setTask] = useState("");
   const [engines, setEngines] = useState<EnginesResponse | null>(null);
   const [engine, setEngine] = useState<string>("");
@@ -24,6 +46,13 @@ export function Dashboard() {
   const [run, setRun] = useState<RunState>({ phase: "idle" });
   const [mockLlm, setMockLlm] = useState(false);
 
+  const synthesis = useSpeechSynthesis();
+  const sounds = useUiSounds();
+  const onTranscript = useCallback((text: string) => {
+    setTask((prev) => (prev ? `${prev.replace(/\s+$/, "")} ${text}` : text));
+  }, []);
+  const recognition = useSpeechRecognition(onTranscript);
+
   useEffect(() => {
     api.engines().then((e) => {
       setEngines(e);
@@ -33,8 +62,30 @@ export function Dashboard() {
     api.health().then((h) => setMockLlm(h.mockLlm)).catch(() => {});
   }, []);
 
+  // Kept mounted across navigation so the task text, chat transcript and any run in flight
+  // survive. Refresh just the lists other pages can change (projects, engines); never touch the
+  // current selections or the draft.
+  useOnActivate(() => {
+    api.projects().then(setProjects).catch(() => {});
+    api.engines().then(setEngines).catch(() => {});
+  });
+
+  // Kept mounted while hidden, so unmounting no longer implicitly silences voice output or
+  // releases the mic — do it explicitly whenever the Task tab isn't the thing on screen.
+  const taskShown = pageActive && tab === "task";
+  useEffect(() => {
+    if (taskShown) return;
+    synthesis.cancel();
+    if (recognition.listening) recognition.stop();
+    // Keyed on visibility only; cancel/stop are stable callbacks.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [taskShown]);
+
   async function submitTask() {
     if (!task.trim()) return;
+    // Leaving the mic open across a run would keep dictating into a disabled textarea.
+    if (recognition.listening) recognition.stop();
+    sounds.play("send");
     setRun({ phase: "planning" });
     try {
       if (planMode === "never") {
@@ -78,7 +129,29 @@ export function Dashboard() {
   function reset() {
     setTask("");
     setRun({ phase: "idle" });
+    synthesis.cancel();
   }
+
+  // Cues and spoken status are driven off the run state rather than fired inside submitTask()
+  // and approvePlan() individually — both of those reach "done" and "error", so doing it here
+  // means one code path instead of four, and no way to add a third entry point that forgets.
+  useEffect(() => {
+    // A run can finish while you're on another page — the result is still there when you come
+    // back (and the "receive" cue still fires as a notification), but don't start reading it
+    // aloud over whatever you're now doing.
+    if (run.phase === "done") {
+      sounds.play("receive");
+      if (taskShown) synthesis.speak(run.response.result);
+      return;
+    }
+    if (run.phase === "error") {
+      sounds.play("error");
+    }
+    const status = spokenStatusFor(run);
+    if (status && taskShown) synthesis.speak(status);
+    // synthesis/sounds are stable callbacks; keying on the run phase is the intent here.
+     
+  }, [run]);
 
   return (
     <div>
@@ -86,24 +159,39 @@ export function Dashboard() {
         <button className={`btn btn-sm ${tab === "task" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("task")}>
           ▶ Task
         </button>
-        <button className={`btn btn-sm ${tab === "chat" ? "btn-primary" : "btn-ghost"}`} onClick={() => setTab("chat")}>
+        <button className={`btn btn-sm ${tab === "chat" ? "btn-primary" : "btn-ghost"}`} onClick={() => { setTab("chat"); setChatOpened(true); }}>
           💬 Chat
         </button>
       </div>
 
-      {tab === "chat" ? (
-        <ChatPanel projects={projects} />
-      ) : (
-        <>
-          {mockLlm && (
-            <div className="badge badge-amber" style={{ display: "flex", marginBottom: 14 }}>
-              ⚠ This server is running with a MOCK LLM connection — task results below are
-              simulated, not real model output. See Settings for details.
-            </div>
-          )}
-          <div className="grid grid-2" style={{ alignItems: "start" }}>
-            <div className="card">
-              <div className="card-title">New task</div>
+      {chatOpened && (
+        <div style={{ display: tab === "chat" ? "contents" : "none" }}>
+          <ChatPanel projects={projects} visible={tab === "chat"} />
+        </div>
+      )}
+      {tab !== "chat" && (
+        <div className="jarvis-shell jarvis-shell-task">
+          {/* No Hologram here any more — it belongs to Chat. On the Task tab it sat above a
+              form, pushing the actual controls below the fold, and its readout duplicated the
+              Result card's text underneath it. The voice controls it used to imply live in
+              the task card's own header instead. */}
+          <div className="jarvis-body">
+            {mockLlm && (
+              <div className="badge badge-amber" style={{ display: "flex", marginBottom: 14 }}>
+                ⚠ This server is running with a MOCK LLM connection — task results below are
+                simulated, not real model output. See Settings for details.
+              </div>
+            )}
+
+            <div className="card jarvis-task-card">
+              <div className="card-title card-title-row">
+                <span>New task</span>
+                <span className="voice-control-group">
+                  <VoiceButton recognition={recognition} />
+                  <SpeakToggle synthesis={synthesis} />
+                  <SoundToggle sounds={sounds} />
+                </span>
+              </div>
 
               <div className="field">
                 <label>What should xcoder do?</label>
@@ -113,6 +201,7 @@ export function Dashboard() {
                   placeholder='e.g. "Add rate limiting middleware to the /api/v1 routes and write tests for it"'
                   disabled={run.phase !== "idle" && run.phase !== "error"}
                 />
+                <InterimTranscript recognition={recognition} />
               </div>
 
               <div className="grid grid-2">
@@ -186,12 +275,12 @@ export function Dashboard() {
               </div>
             </div>
 
-            <div className="card">
+            <div className="card jarvis-task-card">
               <div className="card-title">Result</div>
               <RunOutput run={run} onApprove={approvePlan} />
             </div>
           </div>
-        </>
+        </div>
       )}
     </div>
   );

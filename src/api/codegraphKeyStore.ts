@@ -36,6 +36,13 @@ export function setCodegraphConnection(conn: CodegraphConnection): void {
   connection = { ...conn, baseUrl: conn.baseUrl.replace(/\/+$/, "") };
 }
 
+/** Updates just the default project id on the current connection (e.g. after indexing a
+ *  workspace into a newly-created CodeGraph project — see codegraphTool.ts's indexWorkspace()),
+ *  without disturbing baseUrl/apiKey. No-op if there's no active connection. */
+export function setDefaultProjectId(projectId: number): void {
+  if (connection) connection.defaultProjectId = String(projectId);
+}
+
 export function clearCodegraphConnection(): void {
   connection = null;
 }

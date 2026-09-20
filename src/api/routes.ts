@@ -1,4 +1,5 @@
 import { Router, Request, Response } from "express";
+import multer from "multer";
 import fs from "node:fs";
 import path from "node:path";
 import crypto from "node:crypto";
@@ -9,16 +10,24 @@ import { FileTelemetry } from "../telemetry/logger.js";
 import { loadLlmConfig } from "../config/loadConfig.js";
 import { resolveLogsDir } from "../config/paths.js";
 import { SkillRegistry } from "../core/skillRegistry.js";
-import { authMiddleware, requireAdmin, verifyLogin, findGoogleUser, generateToken, revokeToken, setUserStore, getUserStore, hashPassword, isLegacyHash, checkRateLimit, checkTaskRateLimit, StoredUser } from "./auth.js";
+import { authMiddleware, requireAdmin, verifyLogin, findGoogleUser, generateToken, revokeToken, setUserStore, getUserStore, hashPassword, isLegacyHash, checkRateLimit, checkTaskRateLimit, checkWorkspaceRateLimit, TOKEN_TTL_MS, StoredUser } from "./auth.js";
 import { verifyGoogleIdToken, isGoogleSignInConfigured, getGoogleClientId } from "./googleAuth.js";
 import { loadPersistedUsers, persistUsers, nextUserIdAfter } from "./userStorePersistence.js";
 import { registerProjectRoutes } from "./projectRoutes.js";
 import { registerPlanRoutes } from "./planRoutes.js";
+import { listModels, isAllowedModel, type ModelListResult } from "./ollamaModels.js";
 import { listProjects, getProject, getActiveProject } from "./projectStore.js";
 import { hasStoredApiKey, setStoredApiKey, clearStoredApiKey, applyStoredApiKey } from "./llmKeyStore.js";
-import { getCodegraphConnection, isCodegraphConnected, setCodegraphConnection, clearCodegraphConnection } from "./codegraphKeyStore.js";
-import { getStatus as getCodegraphStatus, startBundledCodegraph, stopBundledCodegraph, getSsoSession } from "./codegraphProcess.js";
+import { getCodegraphConnection, isCodegraphConnected, setCodegraphConnection } from "./codegraphKeyStore.js";
+import { getStatus as getCodegraphStatus, retryAutoConnectIfNeeded, startBundledCodegraph, stopBundledCodegraph, disconnectCodegraph, getSsoSession } from "./codegraphProcess.js";
+import { runCodegraphTool } from "../tools/codegraphTool.js";
+import { XCODER_PROXY_COOKIE } from "./codegraphProxy.js";
 import { TOOL_SCHEMAS } from "../tools/toolSchemas.js";
+import { runSecurityTool } from "../tools/securityOpsTool.js";
+import { getAllowlist, setAllowlist } from "./securityOpsAllowlistStore.js";
+import { appendAuditLog, readAuditLog } from "./auditLog.js";
+import { getLlmConfigSummary, updateLlmConfig, knownProviders, KNOWN_PROVIDER_DEFAULTS } from "./llmConfigStore.js";
+import { listWorkspaceDirectory, readWorkspaceFile, writeWorkspaceFile, createWorkspaceDirectory, deleteWorkspacePath, extractZipIntoWorkspace } from "./workspaceFiles.js";
 import { readTaskHistory } from "../core/taskHistory.js";
 import { PhaseReportStore } from "./phaseReportStore.js";
 import { WbsStore } from "./wbsStore.js";
@@ -34,6 +43,7 @@ import type {
   CreateUserRequest,
   HealthResponse,
   EnginesResponse,
+  SessionResponse,
   LoginRequest,
   LoginResponse,
   TelemetryQuery,
@@ -50,6 +60,14 @@ import type {
   PlatformIntegrationEntry,
   PlatformIntegrationsResponse,
   ConnectCodegraphRequest,
+  SecurityOpsRunRequest,
+  SecurityOpsAllowlistResponse,
+  AuditLogQuery,
+  AuditLogResponse,
+  LlmConfigUpdateRequest,
+  WorkspaceWriteFileRequest,
+  WorkspaceCreateDirRequest,
+  WorkspaceUploadZipResponse,
 } from "./types.js";
 
 const pkg = JSON.parse(
@@ -58,8 +76,18 @@ const pkg = JSON.parse(
 
 export function createRouter(): Router {
   const router = Router();
-  registerProjectRoutes(router);
-  registerPlanRoutes(router);
+
+  // NOTE: registerProjectRoutes() / registerPlanRoutes() are deliberately NOT called here.
+  // They used to be, and that was an authentication bypass: an Express Router dispatches
+  // layers in registration order, so every route registered before `router.use(authMiddleware)`
+  // (mounted further down) is reachable with no token at all. Registering the /projects and
+  // /plans routers at the top of createRouter() therefore left all 16 of their routes fully
+  // anonymous — including GET /projects (enumerate every project on the platform),
+  // POST /projects/:id/upload, GET /projects/:id/download and DELETE /projects/:id/files
+  // (unauthenticated file write / read / delete). Their handlers call authedUser(req), which
+  // falls back to `{ userId: "", isAdmin: false }` when authMiddleware never ran, so the
+  // requests did not error — they just executed as a blank pseudo-user.
+  // They are now registered AFTER authMiddleware, below. Keep them there.
 
   /**
    * Resolves which directory a task should run against: the explicitly requested project, else
@@ -79,6 +107,44 @@ export function createRouter(): Router {
   function authedUser(req: Request): { userId: string; isAdmin: boolean } {
     const user = (req as { user?: { userId: string; role: "admin" | "user" } }).user;
     return { userId: user?.userId ?? "", isAdmin: user?.role === "admin" };
+  }
+
+  /** Like authedUser() but also surfaces the username, for audit-log entries where "which user
+   *  id did this" is far less useful at a glance than "which username did this". */
+  function auditActor(req: Request): { actorId: string; actorUsername: string } {
+    const user = (req as { user?: { userId: string; username: string } }).user;
+    return { actorId: user?.userId ?? "", actorUsername: user?.username ?? "unknown" };
+  }
+
+  /** Records one audit-log entry against the server's own cwd — this is a platform-wide log,
+   *  not a per-project one, same scope as the existing /telemetry route's thinking.log/sys.log. */
+  function recordAudit(req: Request, action: string, summary: string, details?: Record<string, unknown>): void {
+    const { actorId, actorUsername } = auditActor(req);
+    appendAuditLog(process.cwd(), { actorId, actorUsername, action, summary, details });
+  }
+
+  /**
+   * Sets the cookie codegraphProxy.ts checks before forwarding any /codegraph-api request — see
+   * that file's doc comment for why this has to be a cookie rather than reusing the Bearer
+   * token check every other route relies on. Scoped to just the /codegraph-api path (never sent
+   * on ordinary /api/v1 calls), httpOnly (no reason for page JS to ever read it directly — the
+   * browser attaches it automatically), and sameSite "strict" (never sent on a cross-site
+   * request, so it can't be used to probe the proxy from another origin). `secure` mirrors
+   * whatever scheme this exact request came in on, so it isn't silently dropped over plain HTTP
+   * in local dev while still being marked secure behind TLS in production.
+   */
+  function setProxyCookie(req: Request, res: Response, token: string): void {
+    res.cookie(XCODER_PROXY_COOKIE, token, {
+      path: "/codegraph-api",
+      httpOnly: true,
+      sameSite: "strict",
+      secure: req.secure,
+      maxAge: TOKEN_TTL_MS,
+    });
+  }
+
+  function clearProxyCookie(res: Response): void {
+    res.clearCookie(XCODER_PROXY_COOKIE, { path: "/codegraph-api" });
   }
 
   function resolveProjectCwd(userId: string, isAdmin: boolean, projectId?: string): { cwd: string; error?: string } {
@@ -101,6 +167,33 @@ export function createRouter(): Router {
   function resolveEngineName(requested?: string): string {
     if (requested && listEngines().includes(requested)) return requested;
     return DEFAULT_ENGINE;
+  }
+
+  /**
+   * Validates a caller-supplied model name against the models this server can actually offer.
+   *
+   * This is an allowlist check, not a sanity check. The value ends up written straight into the
+   * outbound LLM request, so accepting it as given would let any authenticated user point the
+   * backend at a model the operator never configured — on a reverse-proxied or cloud endpoint,
+   * potentially a far more expensive one.
+   *
+   * Deliberately unlike resolveEngineName() above, which silently falls back to the default for
+   * an unrecognized value: an engine name comes from a fixed UI dropdown where a stale value is
+   * a harmless client-versioning problem, whereas a model determines what the run costs and how
+   * good the output is. Quietly substituting a different model would leave the caller believing
+   * they got the one they picked. Returns an error string for the route to turn into a 400.
+   */
+  async function resolveModelOverride(requested: unknown): Promise<{ model?: string; error?: string }> {
+    if (requested === undefined || requested === null) return {};
+    if (typeof requested !== "string" || requested.trim().length === 0) {
+      return { error: "'model' must be a non-empty string" };
+    }
+    const wanted = requested.trim();
+    const available = await listModels();
+    if (!isAllowedModel(wanted, available.models)) {
+      return { error: `Unknown model '${wanted}'. Available: ${available.models.join(", ")}` };
+    }
+    return { model: wanted };
   }
 
   // ─── Login (no auth required) ──────────────────────────────────────────
@@ -145,6 +238,7 @@ export function createRouter(): Router {
     }
 
     const token = generateToken(verifiedUser.id, verifiedUser.username, verifiedUser.role);
+    setProxyCookie(req, res, token);
     const data: LoginResponse = { token, userId: verifiedUser.id, username: verifiedUser.username, role: verifiedUser.role };
     const body: ApiResponse<LoginResponse> = { success: true, data };
     res.json(body);
@@ -152,6 +246,7 @@ export function createRouter(): Router {
 
   // ─── Logout (no auth required — we read the token from the header) ──────
   router.post("/logout", (req: Request, res: Response) => {
+    clearProxyCookie(res);
     const header = req.headers.authorization;
     if (!header) {
       const body: ApiResponse = { success: true, data: { message: "No token to revoke" } };
@@ -186,16 +281,6 @@ export function createRouter(): Router {
     res.json(body);
   });
 
-  // ─── Engine registry ────────────────────────────────────────────────────
-  // Lets the UI populate an engine picker without hardcoding engine names, and confirms
-  // which one is the default (currently "sdlc") without the frontend needing to know that
-  // out of band.
-  router.get("/engines", (_req: Request, res: Response) => {
-    const data: EnginesResponse = { engines: listEngines(), default: DEFAULT_ENGINE };
-    const body: ApiResponse<EnginesResponse> = { success: true, data };
-    res.json(body);
-  });
-
   // ─── Google sign-in config (no auth required — the login screen needs this before the
   //     user has any token, to decide whether to render the "Sign in with Google" button
   //     and which client id to initialize Google Identity Services with). Never exposes a
@@ -211,9 +296,63 @@ export function createRouter(): Router {
   // All other routes require auth
   router.use(authMiddleware);
 
+  // Project and plan routes — registered HERE, after authMiddleware, so every one of them
+  // requires a valid token. See the note at the top of createRouter() for what went wrong
+  // when these were registered before it.
+  registerProjectRoutes(router);
+  registerPlanRoutes(router);
+
+  // ─── Engine registry ────────────────────────────────────────────────────
+  // Lets the UI populate an engine picker without hardcoding engine names, and confirms
+  // which one is the default (currently "sdlc") without the frontend needing to know that
+  // out of band. Behind auth: it's only ever read by the Dashboard and Settings pages, both
+  // of which are post-login, so there's no reason to expose the platform's engine inventory
+  // to anonymous callers.
+  router.get("/engines", (_req: Request, res: Response) => {
+    const data: EnginesResponse = { engines: listEngines(), default: DEFAULT_ENGINE };
+    const body: ApiResponse<EnginesResponse> = { success: true, data };
+    res.json(body);
+  });
+
+  // ─── Available models ──────────────────────────────────────────────────
+  // Backs the Chat tab's model picker. See ollamaModels.ts for why this never returns an
+  // empty list even when Ollama is unreachable.
+  router.get("/models", async (_req: Request, res: Response) => {
+    const data = await listModels();
+    res.json({ success: true, data } as ApiResponse<ModelListResult>);
+  });
+
+  // ─── Current session ───────────────────────────────────────────────────
+  // "Is the token I'm holding still good, and who does it belong to?" The frontend restores a
+  // token from localStorage on boot, but the server's token store is in-memory (see auth.ts) —
+  // it's wiped on every API restart, and tokens expire after TOKEN_TTL_MS regardless. Without
+  // this endpoint the UI had no way to find that out except by rendering the whole signed-in
+  // app and waiting for some unrelated request to fail. This gives it a single cheap probe to
+  // call before it shows anything, and on a schedule afterwards.
+  //
+  // Doing no work beyond reading what authMiddleware already validated is deliberate: the
+  // useful signal here is entirely in the status code (200 = good, 401/403 = drop the session).
+  router.get("/auth/me", (req: Request, res: Response) => {
+    const user = (req as { user?: { userId: string; username: string; role: "admin" | "user"; expiresAt: number } }).user;
+    if (!user) {
+      // Unreachable in practice — authMiddleware runs first and rejects anything without a
+      // valid token — but returning 401 rather than an empty 200 keeps the "no session" answer
+      // consistent for any caller that somehow gets here.
+      res.status(401).json({ success: false, error: "Missing Authorization header" } as ApiResponse);
+      return;
+    }
+    const data: SessionResponse = {
+      userId: user.userId,
+      username: user.username,
+      role: user.role,
+      expiresAt: user.expiresAt,
+    };
+    res.json({ success: true, data } as ApiResponse<SessionResponse>);
+  });
+
   // ─── Chat / Task Execution ─────────────────────────────────────────────
   router.post("/chat", async (req: Request, res: Response) => {
-    const { task, planMode, fullContextToken, projectId, maxIterations, isolatedWorkspace, continueOnLimit, phasePlanning, engine } = req.body as ChatRequest;
+    const { task, planMode, fullContextToken, projectId, maxIterations, isolatedWorkspace, continueOnLimit, phasePlanning, engine, model } = req.body as ChatRequest;
 
     if (!task || typeof task !== "string" || task.trim().length === 0) {
       const body: ApiResponse = { success: false, error: "Missing or empty 'task' field" };
@@ -236,9 +375,16 @@ export function createRouter(): Router {
       res.status(404).json({ success: false, error: projectError } as ApiResponse);
       return;
     }
+    const { model: overrideModel, error: modelError } = await resolveModelOverride(model);
+    if (modelError) {
+      res.status(400).json({ success: false, error: modelError } as ApiResponse);
+      return;
+    }
+
     const telemetry = new FileTelemetry(cwd);
     const llmConfig = loadLlmConfig();
     applyStoredApiKey(llmConfig);
+    if (overrideModel) llmConfig.model = overrideModel;
     const llm = createLlmClient(llmConfig, telemetry);
 
     // In API context, disable interactive prompts (no TTY available). Plan mode auto-approves
@@ -302,6 +448,7 @@ export function createRouter(): Router {
           continueOnLimit: continueOnLimit ?? false,
           phasePlanning: phasePlanning ?? false,
           engine: resolveEngineName(engine),
+          model: overrideModel,
           createdAt: Date.now(),
         });
       }
@@ -378,13 +525,18 @@ export function createRouter(): Router {
     continueOnLimit?: boolean;
     phasePlanning?: boolean;
     engine: string;
+    /** Validated model override chosen at plan time, if any. Carried through to /chat/execute
+     *  so the approved plan actually runs on the model the user picked — re-reading the
+     *  request body at execute time isn't an option, since that request carries only a
+     *  sessionId. Already allowlist-checked by resolveModelOverride() before landing here. */
+    model?: string;
     createdAt: number;
   }
   const planSessions = new Map<string, PlanSession>();
 
   // ─── Plan Generation (no execution) ────────────────────────────────────
   router.post("/chat/plan", async (req: Request, res: Response) => {
-    const { task, planMode, fullContextToken, projectId, maxIterations, isolatedWorkspace, continueOnLimit, phasePlanning, engine } = req.body as PlanRequest;
+    const { task, planMode, fullContextToken, projectId, maxIterations, isolatedWorkspace, continueOnLimit, phasePlanning, engine, model } = req.body as PlanRequest;
 
     if (!task || typeof task !== "string" || task.trim().length === 0) {
       const body: ApiResponse = { success: false, error: "Missing or empty 'task' field" };
@@ -407,9 +559,16 @@ export function createRouter(): Router {
       res.status(404).json({ success: false, error: projectError } as ApiResponse);
       return;
     }
+    const { model: overrideModel, error: modelError } = await resolveModelOverride(model);
+    if (modelError) {
+      res.status(400).json({ success: false, error: modelError } as ApiResponse);
+      return;
+    }
+
     const telemetry = new FileTelemetry(cwd);
     const llmConfig = loadLlmConfig();
     applyStoredApiKey(llmConfig);
+    if (overrideModel) llmConfig.model = overrideModel;
     const llm = createLlmClient(llmConfig, telemetry);
 
     const opts: OrchestratorOptions = { cwd, planMode: planMode ?? "always" };
@@ -436,6 +595,7 @@ export function createRouter(): Router {
         continueOnLimit: continueOnLimit ?? false,
         phasePlanning: phasePlanning ?? false,
         engine: resolvedEngine,
+        model: overrideModel,
         createdAt: Date.now(),
       });
 
@@ -488,6 +648,8 @@ export function createRouter(): Router {
     const telemetry = new FileTelemetry(cwd);
     const llmConfig = loadLlmConfig();
     applyStoredApiKey(llmConfig);
+    // Whatever model the plan was drafted with is what executes it — see PlanSession.model.
+    if (session.model) llmConfig.model = session.model;
     const llm = createLlmClient(llmConfig, telemetry);
 
     const opts: OrchestratorOptions = {
@@ -588,6 +750,19 @@ export function createRouter(): Router {
     res.json(body);
   });
 
+  // ─── Audit Log ─────────────────────────────────────────────────────────
+  // Read-only view of .agent/logs/audit.jsonl (see auditLog.ts). Admin-only — this is a record
+  // of what other admins have done, so the same access boundary as /users applies. Every write
+  // side of this (recordAudit() calls above) already only fires from inside requireAdmin routes;
+  // this route just closes the loop by also gating the read side.
+  router.get("/audit-log", requireAdmin, (req: Request, res: Response) => {
+    const query = req.query as unknown as AuditLogQuery;
+    const limit = query.limit ?? 200;
+    const entries = readAuditLog(process.cwd(), limit);
+    const body: ApiResponse<AuditLogResponse> = { success: true, data: { entries } };
+    res.json(body);
+  });
+
   // ─── Skills ────────────────────────────────────────────────────────────
   router.get("/skills", (_req: Request, res: Response) => {
     const registry = new SkillRegistry();
@@ -656,14 +831,20 @@ export function createRouter(): Router {
     }
 
     setCodegraphConnection({ baseUrl: baseUrl.trim(), apiKey: apiKey.trim(), defaultProjectId });
+    recordAudit(req, "codegraph.connect_external", `connected external CodeGraph instance at ${baseUrl.trim()}`, { baseUrl: baseUrl.trim(), defaultProjectId });
     const body: ApiResponse<{ connected: true }> = { success: true, data: { connected: true } };
     res.json(body);
   });
 
   // Disconnect CodeGraph (admin only).
-  router.delete("/platform/integrations/codegraph", requireAdmin, (_req: Request, res: Response) => {
-    clearCodegraphConnection();
-    const body: ApiResponse<{ connected: false }> = { success: true, data: { connected: false } };
+  router.delete("/platform/integrations/codegraph", requireAdmin, (req: Request, res: Response) => {
+    // Route through codegraphProcess.ts's disconnectCodegraph() rather than clearing
+    // codegraphKeyStore directly — it also tears down any locally-spawned process and resets
+    // codegraphProcess.ts's own state, so the two can't drift out of sync (state saying
+    // "running" while the actual connection was already cleared out from under it).
+    const status = disconnectCodegraph();
+    recordAudit(req, "codegraph.disconnect", "disconnected CodeGraph integration");
+    const body: ApiResponse<{ connected: false; status: typeof status }> = { success: true, data: { connected: false, status } };
     res.json(body);
   });
 
@@ -674,13 +855,17 @@ export function createRouter(): Router {
   // or hand-entering a URL/API key (the manual /platform/integrations/codegraph route above
   // still exists for pointing at an externally-hosted CodeGraph instead, if preferred).
   router.get("/platform/integrations/codegraph/status", (_req: Request, res: Response) => {
+    // Polled by the Explorer page while it waits for CodeGraph — doubles as the trigger that
+    // retries a sibling-service connection that timed out or was lost (throttled internally).
+    retryAutoConnectIfNeeded();
     const body: ApiResponse = { success: true, data: getCodegraphStatus() };
     res.json(body);
   });
 
-  router.post("/platform/integrations/codegraph/start", requireAdmin, async (_req: Request, res: Response) => {
+  router.post("/platform/integrations/codegraph/start", requireAdmin, async (req: Request, res: Response) => {
     try {
       const status = await startBundledCodegraph();
+      recordAudit(req, "codegraph.start", "started bundled CodeGraph instance");
       const body: ApiResponse = { success: true, data: status };
       res.json(body);
     } catch (err) {
@@ -690,8 +875,9 @@ export function createRouter(): Router {
     }
   });
 
-  router.post("/platform/integrations/codegraph/stop", requireAdmin, (_req: Request, res: Response) => {
+  router.post("/platform/integrations/codegraph/stop", requireAdmin, (req: Request, res: Response) => {
     const status = stopBundledCodegraph();
+    recordAudit(req, "codegraph.stop", "stopped bundled CodeGraph instance");
     const body: ApiResponse = { success: true, data: status };
     res.json(body);
   });
@@ -700,9 +886,117 @@ export function createRouter(): Router {
   // since it hands back a real CodeGraph admin session token. The frontend writes this into
   // localStorage (same-origin as the iframe) right before mounting it, so the embedded
   // Explorer comes up already signed in. Returns null if the bundled instance isn't running.
-  router.get("/platform/integrations/codegraph/sso", requireAdmin, (_req: Request, res: Response) => {
+  router.get("/platform/integrations/codegraph/sso", requireAdmin, (req: Request, res: Response) => {
+    // Also (re)issue the proxy cookie codegraphProxy.ts requires. It's normally set at login, but
+    // a browser that's still using a token from before that cookie existed (or one whose cookie
+    // expired/was cleared while the localStorage token lives on) has no cookie — and then every
+    // request the embedded Explorer makes to /codegraph-api gets a 401, which renders as a blank
+    // or empty panel with nothing to indicate why. This call is authenticated by the Bearer
+    // token, so it's a safe place to hand the cookie back.
+    const bearer = req.headers.authorization?.split(" ");
+    if (bearer?.length === 2 && bearer[0] === "Bearer") setProxyCookie(req, res, bearer[1]);
     const session = getSsoSession();
     const body: ApiResponse = { success: true, data: session };
+    res.json(body);
+  });
+
+  // Index an xcoder project's workspace into CodeGraph: zips it (respecting the same exclusion
+  // set as the project-download route), uploads it as a CodeGraph project, and triggers static
+  // analysis. Same underlying logic as codegraph_tool's action='index_workspace' (so an engine
+  // can also trigger this conversationally) — this route is the direct "Index this workspace"
+  // button on the CodeGraph Explorer / Platform > Tools pages for people who'd rather not go
+  // through chat. Open to any authenticated user for their own project (or any project, for
+  // admins) — same visibility rule as every other project-scoped route.
+  router.post("/platform/integrations/codegraph/index-workspace", async (req: Request, res: Response) => {
+    const { userId, isAdmin } = authedUser(req);
+    // Reuses the task-submission limiter (30/hour/user by default) rather than a bespoke one —
+    // indexing is comparably expensive (zips, uploads, and triggers real static analysis on a
+    // whole project), and this route was previously unrated-limited entirely, letting any
+    // authenticated non-admin user trigger it in a tight loop against shared CodeGraph/xcoder
+    // resources.
+    const { limited, retryAfterMs } = checkTaskRateLimit(userId);
+    if (limited) {
+      const body: ApiResponse = {
+        success: false,
+        error: `Too many indexing requests. Try again in ${Math.ceil((retryAfterMs ?? 0) / 1000)}s.`,
+      };
+      res.status(429).json(body);
+      return;
+    }
+    const { projectId, projectName } = req.body as { projectId?: string; projectName?: string };
+    const { cwd, error } = resolveProjectCwd(userId, isAdmin, projectId);
+    if (error) {
+      const body: ApiResponse = { success: false, error };
+      res.status(404).json(body);
+      return;
+    }
+    try {
+      const result = await runCodegraphTool({ action: "index_workspace", projectName }, cwd);
+      const body: ApiResponse = { success: true, data: JSON.parse(result) };
+      res.json(body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const body: ApiResponse = { success: false, error: message };
+      res.status(500).json(body);
+    }
+  });
+
+  // ─── Security Ops: Blue Team / Red Team ─────────────────────────────────────────────
+  // Backs the Security Ops page and lets any engine call the same checks via
+  // security_ops_tool (src/tools/toolDispatcher.ts). Every red-team action that names a
+  // network target (plus blue's cert_expiry_check) is refused server-side by
+  // securityOpsAllowlistStore.ts's requireAllowedTarget() regardless of what hits this route —
+  // the allowlist routes below just let an admin manage that list from the UI instead of only
+  // via the XCODER_SECOPS_ALLOWLIST env var.
+  router.get("/security-ops/allowlist", (_req: Request, res: Response) => {
+    const body: ApiResponse<SecurityOpsAllowlistResponse> = { success: true, data: { allowlist: getAllowlist() } };
+    res.json(body);
+  });
+
+  // Admin-only: replaces the allowlist wholesale (localhost/127.0.0.1/::1 are always kept —
+  // see securityOpsAllowlistStore.ts's setAllowlist(), which re-adds them unconditionally).
+  router.put("/security-ops/allowlist", requireAdmin, (req: Request, res: Response) => {
+    const { entries } = req.body as { entries?: string[] };
+    if (!Array.isArray(entries) || entries.some((e) => typeof e !== "string")) {
+      const body: ApiResponse = { success: false, error: "Body must be { entries: string[] }" };
+      res.status(400).json(body);
+      return;
+    }
+    const allowlist = setAllowlist(entries);
+    recordAudit(req, "security_ops.allowlist_update", `updated Security Ops target allowlist (${allowlist.length} entries)`, { allowlist });
+    const body: ApiResponse<SecurityOpsAllowlistResponse> = { success: true, data: { allowlist } };
+    res.json(body);
+  });
+
+  // Run a single Blue/Red Team check. Open to any authenticated user (same access level as
+  // running a task) — the allowlist is the real security boundary for anything network-facing,
+  // not who can reach this route. Shares the task-submission rate limiter: these checks spawn
+  // real subprocesses / make real network probes, so this shouldn't be hammerable any more than
+  // task submission itself is.
+  router.post("/security-ops/run", async (req: Request, res: Response) => {
+    const { userId } = authedUser(req);
+    const { limited, retryAfterMs } = checkTaskRateLimit(userId);
+    if (limited) {
+      const body: ApiResponse = {
+        success: false,
+        error: `Too many security-ops requests. Try again in ${Math.ceil((retryAfterMs ?? 0) / 1000)}s.`,
+      };
+      res.status(429).json(body);
+      return;
+    }
+    const { team, toolId, params } = req.body as SecurityOpsRunRequest;
+    if (team !== "blue" && team !== "red") {
+      const body: ApiResponse = { success: false, error: "'team' must be 'blue' or 'red'" };
+      res.status(400).json(body);
+      return;
+    }
+    if (!toolId || typeof toolId !== "string") {
+      const body: ApiResponse = { success: false, error: "Missing 'toolId'" };
+      res.status(400).json(body);
+      return;
+    }
+    const result = await runSecurityTool(team, toolId, params ?? {});
+    const body: ApiResponse<typeof result> = { success: true, data: result };
     res.json(body);
   });
 
@@ -909,12 +1203,243 @@ export function createRouter(): Router {
       return;
     }
     setStoredApiKey(apiKey.trim());
+    recordAudit(req, "settings.llm_key_update", "updated the platform LLM API key");
     res.json({ success: true, data: { hasKey: true } } as ApiResponse);
   });
 
-  router.delete("/settings/llm-key", requireAdmin, (_req: Request, res: Response) => {
+  router.delete("/settings/llm-key", requireAdmin, (req: Request, res: Response) => {
     clearStoredApiKey();
+    recordAudit(req, "settings.llm_key_delete", "cleared the platform LLM API key");
     res.json({ success: true, data: { hasKey: false } } as ApiResponse);
+  });
+
+  // ─── LLM Provider Config ────────────────────────────────────────────────
+  // Backs Settings > LLM Provider — lets an admin pick a provider (Ollama by default, matching
+  // agent/config/llm.yaml's shipped default) and its model/base_url/endpoint/api_key_env without
+  // hand-editing the yaml file. See llmConfigStore.ts for why this is a targeted line-level
+  // edit rather than a full yaml.load()/dump() round-trip (dump() would strip every explanatory
+  // comment in that file).
+  router.get("/settings/llm-config", (_req: Request, res: Response) => {
+    try {
+      const data = getLlmConfigSummary();
+      const body: ApiResponse<typeof data> = { success: true, data };
+      res.json(body);
+    } catch (err) {
+      const body: ApiResponse = { success: false, error: err instanceof Error ? err.message : String(err) };
+      res.status(500).json(body);
+    }
+  });
+
+  router.get("/settings/llm-providers", (_req: Request, res: Response) => {
+    const body: ApiResponse = { success: true, data: { providers: knownProviders(), defaults: KNOWN_PROVIDER_DEFAULTS, default: "ollama" } };
+    res.json(body);
+  });
+
+  router.put("/settings/llm-config", requireAdmin, (req: Request, res: Response) => {
+    const update = req.body as LlmConfigUpdateRequest;
+    if (update.max_tokens !== undefined && (typeof update.max_tokens !== "number" || update.max_tokens <= 0)) {
+      res.status(400).json({ success: false, error: "'max_tokens' must be a positive number" } as ApiResponse);
+      return;
+    }
+    if (update.temperature !== undefined && (typeof update.temperature !== "number" || update.temperature < 0 || update.temperature > 2)) {
+      res.status(400).json({ success: false, error: "'temperature' must be a number between 0 and 2" } as ApiResponse);
+      return;
+    }
+    try {
+      const data = updateLlmConfig(update);
+      recordAudit(req, "settings.llm_config_update", `switched LLM provider to '${data.provider}' (model '${data.model}')`, { ...update });
+      const body: ApiResponse<typeof data> = { success: true, data };
+      res.json(body);
+    } catch (err) {
+      const body: ApiResponse = { success: false, error: err instanceof Error ? err.message : String(err) };
+      res.status(500).json(body);
+    }
+  });
+
+  // ─── Workspace file browser ─────────────────────────────────────────────
+  // Backs the new Workspace page: list/read/write/create/delete files inside a project. Always
+  // confined to the resolved project root (see workspaceFiles.ts's module doc for why this is
+  // unconditional here, unlike the LLM tool layer's opt-in XCODER_RESTRICT_TO_WORKSPACE).
+  router.get("/workspace/files", (req: Request, res: Response) => {
+    const { userId, isAdmin } = authedUser(req);
+    const { cwd, error } = resolveProjectCwd(userId, isAdmin, req.query.projectId as string | undefined);
+    if (error) {
+      res.status(404).json({ success: false, error } as ApiResponse);
+      return;
+    }
+    const dirPath = (req.query.path as string | undefined) ?? ".";
+    try {
+      const entries = listWorkspaceDirectory(cwd, dirPath);
+      const body: ApiResponse = { success: true, data: { path: dirPath, entries } };
+      res.json(body);
+    } catch (err) {
+      res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) } as ApiResponse);
+    }
+  });
+
+  router.get("/workspace/file", (req: Request, res: Response) => {
+    const { userId, isAdmin } = authedUser(req);
+    const { cwd, error } = resolveProjectCwd(userId, isAdmin, req.query.projectId as string | undefined);
+    if (error) {
+      res.status(404).json({ success: false, error } as ApiResponse);
+      return;
+    }
+    const filePath = req.query.path as string | undefined;
+    if (!filePath) {
+      res.status(400).json({ success: false, error: "Missing 'path' query param" } as ApiResponse);
+      return;
+    }
+    try {
+      const { content, size } = readWorkspaceFile(cwd, filePath);
+      const body: ApiResponse = { success: true, data: { path: filePath, content, size } };
+      res.json(body);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      const notFound = (err as NodeJS.ErrnoException)?.code === "ENOENT";
+      res.status(notFound ? 404 : 400).json({ success: false, error: message } as ApiResponse);
+    }
+  });
+
+  router.put("/workspace/file", (req: Request, res: Response) => {
+    const { userId, isAdmin } = authedUser(req);
+    const { limited, retryAfterMs } = checkWorkspaceRateLimit(userId);
+    if (limited) {
+      res.status(429).json({ success: false, error: `Too many workspace edits. Try again in ${Math.ceil((retryAfterMs ?? 0) / 1000)}s.` } as ApiResponse);
+      return;
+    }
+    const { projectId, path: filePath, content } = req.body as WorkspaceWriteFileRequest;
+    const { cwd, error } = resolveProjectCwd(userId, isAdmin, projectId);
+    if (error) {
+      res.status(404).json({ success: false, error } as ApiResponse);
+      return;
+    }
+    if (!filePath || typeof filePath !== "string") {
+      res.status(400).json({ success: false, error: "Missing 'path'" } as ApiResponse);
+      return;
+    }
+    if (typeof content !== "string") {
+      res.status(400).json({ success: false, error: "Missing 'content' (must be a string — use an empty string for a blank new file)" } as ApiResponse);
+      return;
+    }
+    try {
+      writeWorkspaceFile(cwd, filePath, content);
+      const body: ApiResponse = { success: true, data: { path: filePath, size: Buffer.byteLength(content, "utf-8") } };
+      res.json(body);
+    } catch (err) {
+      res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) } as ApiResponse);
+    }
+  });
+
+  router.post("/workspace/dir", (req: Request, res: Response) => {
+    const { userId, isAdmin } = authedUser(req);
+    const { limited, retryAfterMs } = checkWorkspaceRateLimit(userId);
+    if (limited) {
+      res.status(429).json({ success: false, error: `Too many workspace edits. Try again in ${Math.ceil((retryAfterMs ?? 0) / 1000)}s.` } as ApiResponse);
+      return;
+    }
+    const { projectId, path: dirPath } = req.body as WorkspaceCreateDirRequest;
+    const { cwd, error } = resolveProjectCwd(userId, isAdmin, projectId);
+    if (error) {
+      res.status(404).json({ success: false, error } as ApiResponse);
+      return;
+    }
+    if (!dirPath || typeof dirPath !== "string") {
+      res.status(400).json({ success: false, error: "Missing 'path'" } as ApiResponse);
+      return;
+    }
+    try {
+      createWorkspaceDirectory(cwd, dirPath);
+      const body: ApiResponse = { success: true, data: { path: dirPath } };
+      res.json(body);
+    } catch (err) {
+      res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) } as ApiResponse);
+    }
+  });
+
+  // Upload a .zip and extract it into a workspace directory (multipart/form-data: field "file"
+  // is the zip, form fields "projectId" and "path" behave the same as the routes above — "path"
+  // is the target directory the zip's contents land in, not a filename). Real bytes go through
+  // multer's in-memory storage (fine at these size limits — see workspaceFiles.ts's MAX_* zip
+  // guards, which are far more conservative than the 100MB upload ceiling here) rather than a
+  // temp file, keeping this consistent with how /projects/:id/upload already handles uploads.
+  const zipUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 100 * 1024 * 1024 } }).single("file");
+  router.post("/workspace/upload-zip", (req: Request, res: Response) => {
+    zipUpload(req, res, (multerErr) => {
+      if (multerErr) {
+        const message = multerErr instanceof multer.MulterError && multerErr.code === "LIMIT_FILE_SIZE"
+          ? "Zip file is over the 100MB upload limit."
+          : multerErr instanceof Error ? multerErr.message : String(multerErr);
+        res.status(400).json({ success: false, error: message } as ApiResponse);
+        return;
+      }
+
+      const { userId, isAdmin } = authedUser(req);
+      const { limited, retryAfterMs } = checkWorkspaceRateLimit(userId);
+      if (limited) {
+        res.status(429).json({ success: false, error: `Too many workspace edits. Try again in ${Math.ceil((retryAfterMs ?? 0) / 1000)}s.` } as ApiResponse);
+        return;
+      }
+
+      const { projectId, path: dirPath } = req.body as { projectId?: string; path?: string };
+      const { cwd, error } = resolveProjectCwd(userId, isAdmin, projectId);
+      if (error) {
+        res.status(404).json({ success: false, error } as ApiResponse);
+        return;
+      }
+      if (!req.file) {
+        res.status(400).json({ success: false, error: "No file provided (expected multipart field 'file')" } as ApiResponse);
+        return;
+      }
+      if (!req.file.originalname.toLowerCase().endsWith(".zip")) {
+        res.status(400).json({ success: false, error: "Only .zip files are accepted here." } as ApiResponse);
+        return;
+      }
+
+      try {
+        const targetPath = dirPath || ".";
+        const result = extractZipIntoWorkspace(cwd, targetPath, req.file.buffer);
+        recordAudit(
+          req,
+          "workspace.zip_upload",
+          `extracted ${result.filesExtracted} file(s) from "${req.file.originalname}" into ${projectId ?? "the active project"}${targetPath !== "." ? `/${targetPath}` : ""}`,
+          { projectId, path: targetPath, filesExtracted: result.filesExtracted, bytesWritten: result.bytesWritten }
+        );
+        const data: WorkspaceUploadZipResponse = { path: targetPath, ...result };
+        const body: ApiResponse<WorkspaceUploadZipResponse> = { success: true, data };
+        res.json(body);
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        // WorkspaceZipError and the confinement errors are all caller-fixable (bad zip, path
+        // escape, over budget) — 400, not 500.
+        res.status(400).json({ success: false, error: message } as ApiResponse);
+      }
+    });
+  });
+
+  router.delete("/workspace/file", (req: Request, res: Response) => {
+    const { userId, isAdmin } = authedUser(req);
+    const { limited, retryAfterMs } = checkWorkspaceRateLimit(userId);
+    if (limited) {
+      res.status(429).json({ success: false, error: `Too many workspace edits. Try again in ${Math.ceil((retryAfterMs ?? 0) / 1000)}s.` } as ApiResponse);
+      return;
+    }
+    const { cwd, error } = resolveProjectCwd(userId, isAdmin, req.query.projectId as string | undefined);
+    if (error) {
+      res.status(404).json({ success: false, error } as ApiResponse);
+      return;
+    }
+    const targetPath = req.query.path as string | undefined;
+    if (!targetPath) {
+      res.status(400).json({ success: false, error: "Missing 'path' query param" } as ApiResponse);
+      return;
+    }
+    try {
+      deleteWorkspacePath(cwd, targetPath);
+      const body: ApiResponse = { success: true, data: { path: targetPath, deleted: true } };
+      res.json(body);
+    } catch (err) {
+      res.status(400).json({ success: false, error: err instanceof Error ? err.message : String(err) } as ApiResponse);
+    }
   });
 
   // ─── User Management ───────────────────────────────────────────────────
@@ -972,6 +1497,7 @@ export function createRouter(): Router {
 
     // Auto-login after registration
     const token = generateToken(newUser.id, newUser.username, newUser.role);
+    setProxyCookie(req, res, token);
     const data: LoginResponse = { token, userId: newUser.id, username: newUser.username, role: newUser.role };
     const body: ApiResponse<LoginResponse> = { success: true, data };
     res.status(201).json(body);
@@ -1047,6 +1573,7 @@ export function createRouter(): Router {
     persistUsers(storedUsers);
 
     const token = generateToken(user.id, user.username, user.role);
+    setProxyCookie(req, res, token);
     const data: LoginResponse = { token, userId: user.id, username: user.username, role: user.role };
     const body: ApiResponse<LoginResponse> = { success: true, data };
     res.json(body);
@@ -1112,6 +1639,7 @@ export function createRouter(): Router {
       };
       storedUsers.push(newGoogleUser);
       persistUsers(storedUsers);
+      recordAudit(req, "user.create", `created Google-linked user '${derivedUsername}' (${newGoogleUser.role})`, { userId: newGoogleUser.id, username: derivedUsername, role: newGoogleUser.role, authProvider: "google" });
 
       const safeGoogleUser: User = {
         id: newGoogleUser.id,
@@ -1156,6 +1684,7 @@ export function createRouter(): Router {
 
     storedUsers.push(newUser);
     persistUsers(storedUsers);
+    recordAudit(req, "user.create", `created local user '${newUser.username}' (${newUser.role})`, { userId: newUser.id, username: newUser.username, role: newUser.role, authProvider: "local" });
 
     const safeUser: User = {
       id: newUser.id,
@@ -1187,6 +1716,7 @@ export function createRouter(): Router {
       user.role = updates.role === "admin" ? "admin" : "user";
     }
     persistUsers(storedUsers);
+    recordAudit(req, "user.update", `updated user '${user.username}' (id ${user.id}, now ${user.role})`, { userId: user.id, username: user.username, role: user.role });
 
     const body: ApiResponse<User> = {
       success: true,
@@ -1215,6 +1745,7 @@ export function createRouter(): Router {
 
     const deleted = storedUsers.splice(index, 1)[0];
     persistUsers(storedUsers);
+    recordAudit(req, "user.delete", `deleted user '${deleted.username}' (id ${deleted.id})`, { userId: deleted.id, username: deleted.username, role: deleted.role });
     const body: ApiResponse<User> = {
       success: true,
       data: { id: deleted.id, username: deleted.username, role: deleted.role, createdAt: deleted.createdAt },

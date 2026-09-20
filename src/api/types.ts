@@ -42,6 +42,12 @@ export interface ChatRequest {
    *  "swarm"). Defaults to DEFAULT_ENGINE ("sdlc") when omitted. Invalid/unknown names fall
    *  back to the default rather than erroring, so a stale UI selection never breaks a run. */
   engine?: string;
+  /** Optional: override the LLM model for this request only (the Chat tab's model picker).
+   *  Unlike `engine` above, an unrecognized value is a 400 rather than a silent fallback: the
+   *  model determines what a run costs and how good the output is, so quietly substituting a
+   *  different one would leave the caller believing they got what they asked for. Validated
+   *  server-side against the models the server can actually offer — see ollamaModels.ts. */
+  model?: string;
 }
 
 /** POST /api/v1/chat response data. */
@@ -117,6 +123,12 @@ export interface PlanRequest {
   continueOnLimit?: boolean;
   phasePlanning?: boolean;
   engine?: string;
+  /** Optional: override the LLM model for this request only (the Chat tab's model picker).
+   *  Unlike `engine` above, an unrecognized value is a 400 rather than a silent fallback: the
+   *  model determines what a run costs and how good the output is, so quietly substituting a
+   *  different one would leave the caller believing they got what they asked for. Validated
+   *  server-side against the models the server can actually offer — see ollamaModels.ts. */
+  model?: string;
 }
 export interface PlanResponse {
   sessionId: string;
@@ -191,6 +203,100 @@ export interface TelemetryResponse {
   entries: unknown[];
 }
 
+/** GET /api/v1/audit-log query params. */
+export interface AuditLogQuery {
+  /** Number of most recent entries to return. Default: 200. */
+  limit?: number;
+}
+
+/** GET /api/v1/audit-log response data. Entry shape mirrors AuditLogEntry in auditLog.ts. */
+export interface AuditLogResponse {
+  entries: {
+    id: string;
+    timestamp: string;
+    actorId: string;
+    actorUsername: string;
+    action: string;
+    summary: string;
+    details?: Record<string, unknown>;
+  }[];
+}
+
+// ─── Workspace file browser ────────────────────────────────────────────────
+
+export interface WorkspaceFileEntryDto {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  size?: number;
+  modifiedAt?: string;
+}
+
+/** GET /api/v1/workspace/files response data. */
+export interface WorkspaceListResponse {
+  path: string;
+  entries: WorkspaceFileEntryDto[];
+}
+
+/** GET /api/v1/workspace/file response data. */
+export interface WorkspaceFileResponse {
+  path: string;
+  content: string;
+  size: number;
+}
+
+/** PUT /api/v1/workspace/file request body. */
+export interface WorkspaceWriteFileRequest {
+  projectId?: string;
+  path: string;
+  content: string;
+}
+
+/** POST /api/v1/workspace/dir request body. */
+export interface WorkspaceCreateDirRequest {
+  projectId?: string;
+  path: string;
+}
+
+/** POST /api/v1/workspace/upload-zip response data. */
+export interface WorkspaceUploadZipResponse {
+  path: string;
+  filesExtracted: number;
+  dirsCreated: number;
+  bytesWritten: number;
+  skipped: string[];
+}
+
+// ─── LLM provider settings ─────────────────────────────────────────────────
+
+/** GET /api/v1/settings/llm-config response data. A trimmed view of LlmConfig (loadConfig.ts) —
+ *  overrides/fallback are intentionally omitted; this covers only what the Settings page's
+ *  provider picker edits. */
+export interface LlmConfigSummary {
+  provider: string;
+  base_url?: string;
+  endpoint?: string;
+  model: string;
+  api_key_env?: string;
+  max_tokens: number;
+  temperature: number;
+  /** True when this provider is in loadConfig.ts's NO_AUTH_PROVIDERS set (currently just
+   *  "ollama") — the frontend uses this to skip showing an api_key_env field. */
+  requiresNoAuth: boolean;
+}
+
+/** PUT /api/v1/settings/llm-config request body — all fields optional; omitted fields keep
+ *  their current value. */
+export interface LlmConfigUpdateRequest {
+  provider?: string;
+  base_url?: string;
+  endpoint?: string;
+  model?: string;
+  api_key_env?: string;
+  max_tokens?: number;
+  temperature?: number;
+}
+
 /** GET /api/v1/skills response data. */
 export interface SkillListEntry {
   name: string;
@@ -245,6 +351,20 @@ export interface LoginResponse {
   userId: string;
   username: string;
   role: "admin" | "user";
+}
+
+/** GET /api/v1/auth/me response data. Returned only for a token that is currently valid and
+ *  unexpired — the endpoint sits behind authMiddleware, so an invalid or expired token gets
+ *  the usual 401/403 instead of a body. That's the point: the frontend calls this on boot (and
+ *  periodically thereafter) purely to find out whether the token it restored from localStorage
+ *  is still good, and drops the session the moment it isn't. */
+export interface SessionResponse {
+  userId: string;
+  username: string;
+  role: "admin" | "user";
+  /** Epoch ms at which this token expires. Lets the client schedule its own pre-emptive
+   *  logout instead of waiting to discover the expiry through a failed request. */
+  expiresAt: number;
 }
 
 /** POST /api/v1/auth/google request body. Sent by the frontend after Google Identity Services
@@ -372,5 +492,25 @@ export interface ConnectCodegraphRequest {
   apiKey: string;
   /** Default CodeGraph project id to query when a tool call doesn't specify one. */
   defaultProjectId?: string;
+}
+
+// ─── Security Ops ──────────────────────────────────────────────────────────
+
+/** A single Blue/Red Team check result, mirrors SecOpsResult in securityOpsTool.ts. */
+export interface SecOpsResult {
+  level: "ok" | "warn" | "err";
+  text: string;
+}
+
+/** POST /api/v1/security-ops/run request body. */
+export interface SecurityOpsRunRequest {
+  team: "blue" | "red";
+  toolId: string;
+  params?: Record<string, string>;
+}
+
+/** GET/PUT /api/v1/security-ops/allowlist response data. */
+export interface SecurityOpsAllowlistResponse {
+  allowlist: string[];
 }
 

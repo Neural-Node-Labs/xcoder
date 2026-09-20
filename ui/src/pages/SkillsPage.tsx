@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePageActive, useOnActivate } from "../context/PageActive";
 import { api, SkillListEntry } from "../api/client";
 
 export function SkillsPage() {
@@ -6,12 +7,15 @@ export function SkillsPage() {
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState("");
 
-  useEffect(() => {
+  function load() {
     api
       .skills()
       .then(setSkills)
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(load, []);
+  useOnActivate(load);
 
   const filtered = skills.filter(
     (s) =>

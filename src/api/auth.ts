@@ -26,7 +26,7 @@ interface TokenEntry {
 
 /** How long an issued token remains valid. Override with XCODER_TOKEN_TTL_MS for a shorter
  *  window in higher-security deployments. Default: 7 days. */
-const TOKEN_TTL_MS = Number(process.env.XCODER_TOKEN_TTL_MS) > 0 ? Number(process.env.XCODER_TOKEN_TTL_MS) : 7 * 24 * 60 * 60 * 1000;
+export const TOKEN_TTL_MS = Number(process.env.XCODER_TOKEN_TTL_MS) > 0 ? Number(process.env.XCODER_TOKEN_TTL_MS) : 7 * 24 * 60 * 60 * 1000;
 
 const tokenStore = new Map<string, TokenEntry>();
 
@@ -268,6 +268,20 @@ export function checkTaskRateLimit(userId: string): { limited: boolean; retryAft
   return checkRateLimitWithConfig(`task:${userId}`, TASK_RATE_LIMIT_WINDOW_MS, TASK_RATE_LIMIT_MAX);
 }
 
+/** Rate limit for Workspace file browser mutations (PUT/POST/DELETE under /workspace/*) —
+ *  deliberately a separate bucket from checkTaskRateLimit(), not a reuse of it. Task submission
+ *  is capped at 30/hour by design (each one kicks off a real LLM-driven run); someone actively
+ *  editing files in the Workspace page can easily exceed that in a few minutes of normal
+ *  save-as-you-go work, and sharing the same bucket would mean editing files eats into the same
+ *  budget as running tasks, for two very different kinds of usage. This is a much higher,
+ *  shorter-window ceiling meant only to catch a runaway script or a compromised session, not to
+ *  throttle normal interactive editing. */
+const WORKSPACE_RATE_LIMIT_WINDOW_MS = Number(process.env.XCODER_WORKSPACE_RATE_WINDOW_MS) > 0 ? Number(process.env.XCODER_WORKSPACE_RATE_WINDOW_MS) : 5 * 60 * 1000; // 5 minutes
+const WORKSPACE_RATE_LIMIT_MAX = Number(process.env.XCODER_WORKSPACE_RATE_MAX) > 0 ? Number(process.env.XCODER_WORKSPACE_RATE_MAX) : 300; // 300 writes/5min/user by default
+export function checkWorkspaceRateLimit(userId: string): { limited: boolean; retryAfterMs?: number } {
+  return checkRateLimitWithConfig(`workspace:${userId}`, WORKSPACE_RATE_LIMIT_WINDOW_MS, WORKSPACE_RATE_LIMIT_MAX);
+}
+
 function checkRateLimitWithConfig(key: string, windowMs: number, maxAttempts: number): { limited: boolean; retryAfterMs?: number } {
   const now = Date.now();
   const entry = rateLimitStore.get(key) ?? { attempts: [] };
@@ -299,7 +313,7 @@ function checkRateLimitWithConfig(key: string, windowMs: number, maxAttempts: nu
  * is safe for both: checkRateLimitWithConfig() always does its own correctly-scoped filtering
  * on the read path regardless of what this backstop does.
  */
-const RATE_LIMIT_SWEEP_INTERVAL_MS = Math.max(RATE_LIMIT_WINDOW_MS, TASK_RATE_LIMIT_WINDOW_MS);
+const RATE_LIMIT_SWEEP_INTERVAL_MS = Math.max(RATE_LIMIT_WINDOW_MS, TASK_RATE_LIMIT_WINDOW_MS, WORKSPACE_RATE_LIMIT_WINDOW_MS);
 setInterval(() => {
   const now = Date.now();
   for (const [key, entry] of rateLimitStore) {

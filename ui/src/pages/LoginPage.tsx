@@ -41,7 +41,7 @@ function loadGoogleScript(): Promise<void> {
 }
 
 export function LoginPage() {
-  const { login, register, loginWithGoogle } = useAuth();
+  const { login, register, loginWithGoogle, sessionExpired } = useAuth();
   const [needsRegistration, setNeedsRegistration] = useState<boolean | null>(null);
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
@@ -121,6 +121,16 @@ export function LoginPage() {
             <div className="brand-sub">SDLC Orchestration Platform</div>
           </div>
         </div>
+
+        {/* Being bounced to a login form with no explanation reads as a bug rather than as a
+            security feature, so say plainly why the session ended. Shown above the setup-status
+            branch so it appears even while the user-count probe is still in flight. */}
+        {sessionExpired && (
+          <div className="badge badge-amber session-expired-notice">
+            Your session ended and you've been signed out. This happens when a session expires or
+            the server restarts. Please sign in again.
+          </div>
+        )}
 
         {needsRegistration === null ? (
           <div className="text-2">Checking setup status…</div>

@@ -1088,3 +1088,241 @@ tr:hover td {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(0, 230, 255, 0.45);
 }
+
+/* ─── Jarvis-style centered console (Task / Chat) ──────────────────────
+   Centered, Claude-esque column with the Hologram acting as JARVIS's
+   presence at the top and a sticky pill-shaped input bar at the bottom,
+   modeled after Iron Man's HUD assistant. ─────────────────────────────── */
+
+.jarvis-shell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  width: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  min-height: calc(100vh - 190px);
+}
+
+.jarvis-hologram-wrap {
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.jarvis-body {
+  width: 100%;
+  max-width: 720px;
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.jarvis-thread {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 2px 18px;
+  min-height: 80px;
+}
+
+.jarvis-footer {
+  position: sticky;
+  bottom: 0;
+  width: 100%;
+  padding: 10px 0 4px;
+  background: linear-gradient(180deg, transparent, var(--bg-0) 35%);
+}
+
+.jarvis-input-bar {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  background: var(--glass-1);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--border);
+  border-radius: 22px;
+  padding: 8px 8px 8px 18px;
+  box-shadow: 0 0 24px rgba(var(--cyan-rgb), 0.1), inset 0 0 14px rgba(var(--cyan-rgb), 0.04);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease;
+}
+
+.jarvis-input-bar:focus-within {
+  border-color: var(--border-hover);
+  box-shadow: 0 0 28px rgba(var(--cyan-rgb), 0.18), inset 0 0 14px rgba(var(--cyan-rgb), 0.06);
+}
+
+.jarvis-input-bar textarea {
+  flex: 1;
+  background: transparent;
+  border: none;
+  resize: none;
+  min-height: 26px;
+  max-height: 140px;
+  padding: 6px 0;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-0);
+}
+
+.jarvis-input-bar textarea:focus {
+  outline: none;
+  box-shadow: none;
+}
+
+.jarvis-input-bar textarea::placeholder {
+  color: var(--text-2);
+}
+
+.jarvis-send-btn {
+  flex-shrink: 0;
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 15px;
+  padding: 0;
+}
+
+.jarvis-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+  margin: 2px 0 14px;
+}
+
+.jarvis-meta-row select {
+  width: auto;
+  font-size: 11px;
+  padding: 5px 10px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.jarvis-task-card {
+  width: 100%;
+}
+
+/* ─── Session restore / expiry ─────────────────────────────────────────
+   Shown by App.tsx's Gate while a token restored from localStorage is being
+   verified against the server, before either the app shell or the login page
+   is allowed to render. ──────────────────────────────────────────────── */
+
+.session-check {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  min-height: 100vh;
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--text-2);
+  letter-spacing: 0.5px;
+}
+
+.session-expired-notice {
+  display: block;
+  margin-bottom: 18px;
+  line-height: 1.5;
+  white-space: normal;
+  text-align: left;
+}
+
+/* ─── Voice input / output controls ────────────────────────────────────
+   Shared by the Task tab's card header and the Chat tab's meta row. Each
+   button only renders when the matching browser API exists, so these rules
+   have to look right for one, two, or three buttons in a row. ─────────── */
+
+.voice-control-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.voice-btn {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  font-size: 13px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+
+.voice-btn-active {
+  border-color: var(--cyan);
+  background: var(--cyan-dim);
+  color: var(--text-0);
+  box-shadow: 0 0 12px rgba(var(--cyan-rgb), 0.35);
+}
+
+/* The mic button while actually recording. Kept to a slow, low-contrast pulse: a recording
+   indicator needs to be unmistakable without becoming the most distracting thing on screen. */
+.voice-btn-active[aria-pressed="true"] {
+  animation: voicePulse 1.8s ease-in-out infinite;
+}
+
+@keyframes voicePulse {
+  0%, 100% { box-shadow: 0 0 10px rgba(var(--cyan-rgb), 0.28); }
+  50%      { box-shadow: 0 0 18px rgba(var(--cyan-rgb), 0.55); }
+}
+
+/* Respect a user who has asked the OS for less motion — this is decorative. */
+@media (prefers-reduced-motion: reduce) {
+  .voice-btn-active[aria-pressed="true"] { animation: none; }
+  .voice-pulse { animation: none; }
+}
+
+.voice-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-2);
+  letter-spacing: 0.4px;
+  min-height: 18px;
+}
+
+.voice-pulse {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--cyan);
+  flex-shrink: 0;
+  animation: voicePulse 1.4s ease-in-out infinite;
+}
+
+.card-title-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+/* ─── Chat / Task console layout ───────────────────────────────────────
+   The Hologram is Chat-only now. The Task tab has no emblem above its form,
+   so it shouldn't reserve the vertical space for one. ─────────────────── */
+
+.jarvis-shell-task {
+  min-height: 0;
+}
+
+/* Breathing room under the emblem so its glow fades into the thread below rather than
+   stopping at a hard line where the next element begins. */
+.jarvis-hologram-wrap {
+  margin-bottom: 4px;
+}

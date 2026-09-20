@@ -43,6 +43,8 @@ import { handler as writeFileToolHandler } from "./writeFileTool.js";
 import { handler as validateFileHandler } from "./validateFileTool.js";
 import { runCodegraphTool, CodegraphToolArgs } from "./codegraphTool.js";
 import { runMcpTool, McpToolArgs } from "./mcpTool.js";
+import { webSearch } from "./webSearchTool.js";
+import { runSecurityTool } from "./securityOpsTool.js";
 
 /**
  * Attempts to parse JSON with automatic repair for common LLM generation errors.
@@ -351,6 +353,13 @@ const NETWORK_FETCH_TOOLS = new Set([
   "api_test_tool",
   "github_tool",
   "codegraph_tool",
+  "web_search_tool",
+  // security_ops_tool as a whole is gated here even though several of its blue-team actions
+  // (log_scan, file_integrity_check, dependency_audit, firewall_status, ssh_auth_log_review,
+  // backup_verify) are purely local — same call as codegraph_tool above: simpler to reason
+  // about one on/off switch per tool than to split gating within a single tool's actions, and
+  // several of its actions (cert_expiry_check, and every red-team network action) do dial out.
+  "security_ops_tool",
 ]);
 
 function disabledToolReason(name: string): string | undefined {
@@ -835,11 +844,25 @@ case "conversation_tool": {
         return { toolCallId: call.id, toolName: name, observation: result, isError: false };
       }
       case "codegraph_tool": {
-        const result = await runCodegraphTool(args as unknown as CodegraphToolArgs);
+        const result = await runCodegraphTool(args as unknown as CodegraphToolArgs, cwd);
         return { toolCallId: call.id, toolName: name, observation: result, isError: false };
       }
       case "mcp_tool": {
         const result = await runMcpTool(args as unknown as McpToolArgs);
+        return { toolCallId: call.id, toolName: name, observation: result, isError: false };
+      }
+      case "web_search_tool": {
+        const { query, limit } = args as { query: string; limit?: number };
+        const results = await webSearch(query, limit);
+        return { toolCallId: call.id, toolName: name, observation: results, isError: false };
+      }
+      case "security_ops_tool": {
+        const { team, toolId, params } = args as { team: "blue" | "red"; toolId: string; params?: Record<string, string> };
+        const result = await runSecurityTool(team, toolId, params ?? {});
+        // runSecurityTool already catches its own errors (bad target, unknown toolId, etc.) and
+        // reports them as a level:"err" SecOpsResult rather than throwing — same convention as
+        // codegraph_tool/mcp_tool/web_search_tool above, so isError stays false here and the
+        // outer catch below only fires for a genuine unexpected exception.
         return { toolCallId: call.id, toolName: name, observation: result, isError: false };
       }
       default:

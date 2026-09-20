@@ -10,3 +10,7 @@ npm-debug.log*
 Dockerfile
 docker-compose.yml
 .dockerignore
+**/node_modules
+integrations/codegraph/codegraph-ui/dist
+integrations/codegraph/codegraph/.venv
+**/__pycache__

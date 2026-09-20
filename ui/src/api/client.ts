@@ -72,6 +72,32 @@ const post = <T>(path: string, body?: unknown) => request<T>("POST", path, body)
 const put = <T>(path: string, body?: unknown) => request<T>("PUT", path, body);
 const del = <T>(path: string) => request<T>("DELETE", path);
 
+/** Like request(), but for multipart/form-data uploads — the generic request() above always
+ *  JSON-encodes, which can't carry a real file. Used only by uploadWorkspaceZip() so far. */
+async function uploadForm<T>(path: string, form: FormData): Promise<T> {
+  const headers: Record<string, string> = {};
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+  // Deliberately no Content-Type header — the browser sets multipart/form-data with the
+  // correct boundary itself. Setting it manually here would omit that boundary and the
+  // server would fail to parse the body at all.
+
+  const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: form });
+
+  let json: ApiResponse<T>;
+  try {
+    json = await res.json();
+  } catch {
+    throw new Error(`Server returned a non-JSON response (HTTP ${res.status})`);
+  }
+  if (!res.ok || !json.success) {
+    if (res.status === 401 || (res.status === 403 && AUTH_INVALID_MESSAGES.has(json.error ?? ""))) {
+      onUnauthorized?.();
+    }
+    throw new Error(json.error || `Request failed (HTTP ${res.status})`);
+  }
+  return json.data as T;
+}
+
 // ─── Types (mirrors src/api/types.ts) ──────────────────────────────────────────────
 
 export interface LoginResponse {
@@ -91,6 +117,25 @@ export interface HealthResponse {
 export interface EnginesResponse {
   engines: string[];
   default: string;
+}
+
+/** GET /api/v1/auth/me — the answer to "is the token I restored from localStorage still good?".
+ *  A 401/403 is the meaningful case; this body is only returned when the session is valid. */
+export interface SessionResponse {
+  userId: string;
+  username: string;
+  role: "admin" | "user";
+  /** Epoch ms at which this token expires, so the client can log out on schedule rather than
+   *  waiting to discover the expiry through a failed request mid-task. */
+  expiresAt: number;
+}
+
+/** GET /api/v1/models — backs the Chat tab's model picker. Never empty, even when Ollama is
+ *  unreachable; `source` says whether the list is live or the compose-pulled fallback. */
+export interface ModelListResponse {
+  models: string[];
+  default: string;
+  source: "live" | "fallback" | "config";
 }
 
 export interface UsageSummary {
@@ -121,6 +166,10 @@ export interface ChatRequest {
   phasePlanning?: boolean;
   auto?: boolean;
   engine?: string;
+  /** Optional per-request model override (the Chat tab's picker). Validated server-side
+   *  against the models the backend can actually offer — an unknown name is a 400, not a
+   *  silent fallback, so the caller always knows which model ran. */
+  model?: string;
 }
 
 export interface ChatResponse {
@@ -219,10 +268,13 @@ export interface PlatformIntegrationEntry {
 export interface CodegraphStatus {
   bundled: boolean;
   running: boolean;
-  port?: number;
+  external: boolean;
   baseUrl?: string;
   startedAt?: string;
   uiAvailable: boolean;
+  connecting: boolean;
+  connectError?: string;
+  configuredUrl?: string;
 }
 
 export interface CodegraphSsoSession {
@@ -234,6 +286,54 @@ export interface CodegraphSsoSession {
 export interface GoogleSignInConfig {
   enabled: boolean;
   clientId: string;
+}
+
+export interface SecOpsResult {
+  level: "ok" | "warn" | "err";
+  text: string;
+}
+
+export interface AuditLogEntry {
+  id: string;
+  timestamp: string;
+  actorId: string;
+  actorUsername: string;
+  action: string;
+  summary: string;
+  details?: Record<string, unknown>;
+}
+
+export interface WorkspaceFileEntry {
+  name: string;
+  path: string;
+  type: "file" | "dir";
+  size?: number;
+  modifiedAt?: string;
+}
+
+export interface WorkspaceZipUploadResult {
+  path: string;
+  filesExtracted: number;
+  dirsCreated: number;
+  bytesWritten: number;
+  skipped: string[];
+}
+
+export interface LlmConfigSummary {
+  provider: string;
+  base_url?: string;
+  endpoint?: string;
+  model: string;
+  api_key_env?: string;
+  max_tokens: number;
+  temperature: number;
+  requiresNoAuth: boolean;
+}
+
+export interface LlmProviderDefault {
+  base_url?: string;
+  model: string;
+  api_key_env?: string;
 }
 
 export interface TelemetryEntry {
@@ -252,8 +352,13 @@ export const api = {
   googleSignInConfig: () => get<GoogleSignInConfig>("/auth/google/config"),
   loginWithGoogle: (credential: string) => post<LoginResponse>("/auth/google", { credential }),
 
+  /** Cheap "is this token still valid" probe. Used on boot and on a schedule — see
+   *  AuthContext. Rejects (and so triggers the unauthorized handler) for a dead session. */
+  session: () => get<SessionResponse>("/auth/me"),
+
   health: () => get<HealthResponse>("/health"),
   engines: () => get<EnginesResponse>("/engines"),
+  models: () => get<ModelListResponse>("/models"),
 
   chat: (body: ChatRequest) => post<ChatResponse>("/chat", body),
   plan: (body: ChatRequest) => post<{ sessionId: string; plan: string; task: string; planMode: string }>("/chat/plan", body),
@@ -274,9 +379,39 @@ export const api = {
   telemetry: (log: "thinking" | "llm" | "sys", limit = 50) =>
     get<{ logFile: string; entries: TelemetryEntry[] }>(`/telemetry?log=${log}&limit=${limit}`),
 
+  auditLog: (limit = 200) => get<{ entries: AuditLogEntry[] }>(`/audit-log?limit=${limit}`),
+
   llmKeyStatus: () => get<{ hasKey: boolean }>("/settings/llm-key"),
   setLlmKey: (apiKey: string) => put<{ hasKey: boolean }>("/settings/llm-key", { apiKey }),
   clearLlmKey: () => del<{ hasKey: boolean }>("/settings/llm-key"),
+
+  llmConfig: () => get<LlmConfigSummary>("/settings/llm-config"),
+  llmProviders: () => get<{ providers: string[]; defaults: Record<string, LlmProviderDefault>; default: string }>("/settings/llm-providers"),
+  updateLlmConfig: (update: Partial<LlmConfigSummary>) => put<LlmConfigSummary>("/settings/llm-config", update),
+
+  workspaceFiles: (projectId: string | undefined, dirPath = ".") =>
+    get<{ path: string; entries: WorkspaceFileEntry[] }>(
+      `/workspace/files?path=${encodeURIComponent(dirPath)}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`
+    ),
+  workspaceFile: (projectId: string | undefined, filePath: string) =>
+    get<{ path: string; content: string; size: number }>(
+      `/workspace/file?path=${encodeURIComponent(filePath)}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`
+    ),
+  writeWorkspaceFile: (projectId: string | undefined, filePath: string, content: string) =>
+    put<{ path: string; size: number }>("/workspace/file", { projectId, path: filePath, content }),
+  createWorkspaceDir: (projectId: string | undefined, dirPath: string) =>
+    post<{ path: string }>("/workspace/dir", { projectId, path: dirPath }),
+  uploadWorkspaceZip: (projectId: string | undefined, dirPath: string, file: File) => {
+    const form = new FormData();
+    form.set("file", file);
+    if (projectId) form.set("projectId", projectId);
+    form.set("path", dirPath);
+    return uploadForm<WorkspaceZipUploadResult>("/workspace/upload-zip", form);
+  },
+  deleteWorkspacePath: (projectId: string | undefined, targetPath: string) =>
+    del<{ path: string; deleted: boolean }>(
+      `/workspace/file?path=${encodeURIComponent(targetPath)}${projectId ? `&projectId=${encodeURIComponent(projectId)}` : ""}`
+    ),
 
   users: () => get<User[]>("/users"),
   createUser: (username: string, password: string, role?: "admin" | "user") =>
@@ -295,6 +430,16 @@ export const api = {
   startBundledCodegraph: () => post<CodegraphStatus>("/platform/integrations/codegraph/start"),
   stopBundledCodegraph: () => post<CodegraphStatus>("/platform/integrations/codegraph/stop"),
   codegraphSso: () => get<CodegraphSsoSession | null>("/platform/integrations/codegraph/sso"),
+  indexCodegraphWorkspace: (projectId?: string, projectName?: string) =>
+    post<{ codegraphProjectId: number; codegraphProjectName: string; extractedFiles: number }>(
+      "/platform/integrations/codegraph/index-workspace",
+      { projectId, projectName }
+    ),
+
+  securityOpsAllowlist: () => get<{ allowlist: string[] }>("/security-ops/allowlist"),
+  updateSecurityOpsAllowlist: (entries: string[]) => put<{ allowlist: string[] }>("/security-ops/allowlist", { entries }),
+  runSecurityOpsTool: (team: "blue" | "red", toolId: string, params: Record<string, string>) =>
+    post<SecOpsResult>("/security-ops/run", { team, toolId, params }),
 
   projects: (allProjects?: boolean) => get<Project[]>(`/projects${allProjects ? "?all=true" : ""}`),
   createProject: (name: string) => post<Project>("/projects", { name }),

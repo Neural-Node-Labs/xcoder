@@ -75,6 +75,10 @@ export function resolveThinkingLogPath(projectRoot: string): string {
 export function resolveSysLogPath(projectRoot: string): string {
   return path.join(resolveLogsDir(projectRoot), "sys.log");
 }
+/** .agent/logs/audit.jsonl -- append-only platform admin-action audit trail (see auditLog.ts). */
+export function resolveAuditLogJsonlPath(projectRoot: string): string {
+  return path.join(resolveLogsDir(projectRoot), "audit.jsonl");
+}
 
 // ─── Iba pang file sa .agent root ───────────────────────────────────────────────────
 export function resolveLessonsPath(projectRoot: string): string {

@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePageActive, useOnActivate } from "../context/PageActive";
 import { api, User } from "../api/client";
 
 export function UsersPage() {
@@ -16,6 +17,7 @@ export function UsersPage() {
   }
 
   useEffect(refresh, []);
+  useOnActivate(refresh);
 
   async function create(e: React.FormEvent) {
     e.preventDefault();

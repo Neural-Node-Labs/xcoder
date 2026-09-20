@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePageActive, useOnActivate } from "../context/PageActive";
 import { api, TaskHistoryEntry } from "../api/client";
 
 export function TaskHistoryPage() {
@@ -6,13 +7,19 @@ export function TaskHistoryPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
+  function load() {
     api
       .taskHistory(50)
-      .then((r) => setTasks(r.tasks))
+      .then((r) => {
+        setTasks(r.tasks);
+        setError(null);
+      })
       .catch((e) => setError(e instanceof Error ? e.message : String(e)))
       .finally(() => setLoading(false));
-  }, []);
+  }
+
+  useEffect(load, []);
+  useOnActivate(load); // a task may have finished while this page was hidden
 
   return (
     <div className="card">

@@ -213,4 +213,26 @@ def get_stats(project_id: int | None = None) -> dict:
 
 
 if __name__ == "__main__":
-    mcp.run(transport="stdio")
+    # "stdio" (default) is what Claude Desktop/Code and xcoder's own locally-spawned mode use —
+    # the client launches this process directly and talks over its stdin/stdout, per the MCP
+    # spec's stdio transport.
+    #
+    # "streamable-http" is for running this as its own long-lived network service (e.g. the
+    # `codegraph-mcp` service in docker-compose.yml) that a client connects to over HTTP instead
+    # of spawning — set MCP_TRANSPORT=streamable-http. stateless_http=True means every request
+    # is handled independently (no session/connection state kept between calls), which fits how
+    # xcoder's mcpTool.ts calls MCP servers: one self-contained request per tool call, same as
+    # it already does for the stdio case (spawn -> initialize -> one call -> exit).
+    # json_response=True returns a plain JSON body instead of an SSE stream, since there's
+    # nothing here that streams incremental results.
+    transport = os.environ.get("MCP_TRANSPORT", "stdio")
+    if transport == "stdio":
+        mcp.run(transport="stdio")
+    elif transport == "streamable-http":
+        host = os.environ.get("MCP_HOST", "0.0.0.0")
+        port = int(os.environ.get("MCP_PORT", "8900"))
+        print(f"[codegraph-mcp] Serving MCP over streamable-http on {host}:{port} ...", file=sys.stderr)
+        mcp.run(transport="streamable-http", host=host, port=port, stateless_http=True, json_response=True)
+    else:
+        print(f"[codegraph-mcp] Unknown MCP_TRANSPORT '{transport}' — expected 'stdio' or 'streamable-http'.", file=sys.stderr)
+        sys.exit(1)

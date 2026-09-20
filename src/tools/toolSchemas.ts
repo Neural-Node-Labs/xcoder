@@ -880,22 +880,24 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: "codegraph_tool",
       description:
-        "Query a connected CodeGraph instance (Platform > Integrations > CodeGraph) for structural facts about an indexed codebase: full-text symbol search, a single node's details, its dependencies/dependents, blast-radius impact analysis, shortest path between two symbols, unresolved references, or project-wide stats. Prefer this over grep_tool when the question is about code *structure* or *relationships* (\"what calls this function\", \"what breaks if I change this\") rather than raw text matching.",
+        "Query a connected CodeGraph instance (Platform > Integrations > CodeGraph) for structural facts about an indexed codebase: full-text symbol search, a single node's details, its dependencies/dependents, blast-radius impact analysis, shortest path between two symbols, unresolved references, or project-wide stats. Prefer this over grep_tool when the question is about code *structure* or *relationships* (\"what calls this function\", \"what breaks if I change this\") rather than raw text matching. Use action='index_workspace' first if the current project hasn't been indexed yet — it zips the workspace (or a subpath of it), uploads it to CodeGraph as a project, runs static analysis, and sets it as the default project for every other action here.",
       parameters: {
         type: "object",
         properties: {
           action: {
             type: "string",
             description:
-              "One of: 'search' (full-text query), 'get_node', 'dependencies', 'dependents', 'impact', 'path', 'unresolved', 'stats'.",
+              "One of: 'index_workspace' (index the current project into CodeGraph), 'search' (full-text query), 'get_node', 'dependencies', 'dependents', 'impact', 'path', 'unresolved', 'stats'.",
           },
-          projectId: { type: "number", description: "CodeGraph project id. Optional if the integration has a default project configured." },
+          projectId: { type: "number", description: "CodeGraph project id. Optional if the integration has a default project configured (index_workspace sets one automatically)." },
           query: { type: "string", description: "Full-text search string, required for action='search'." },
           nodeId: { type: "number", description: "Node id, required for get_node/dependencies/dependents/impact; used as the default source for 'path'." },
           depth: { type: "number", description: "Traversal depth for dependencies/dependents/impact. Defaults: 1/1/2." },
           source: { type: "number", description: "Source node id for action='path' (falls back to nodeId if omitted)." },
           target: { type: "number", description: "Target node id, required for action='path'." },
           limit: { type: "number", description: "Max rows to return for 'search' and 'unresolved'." },
+          path: { type: "string", description: "index_workspace: subpath of the current workspace to index, relative to its root. Defaults to the whole workspace." },
+          projectName: { type: "string", description: "index_workspace: name for the CodeGraph project. Defaults to the workspace directory's name. Reuses an existing project with this exact name if one exists, so re-indexing is idempotent." },
         },
         required: ["action"],
       },
@@ -906,17 +908,59 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
     function: {
       name: "mcp_tool",
       description:
-        "Call a tool exposed by an external Model Context Protocol (MCP) server. Use action='list' first to discover which tools a server offers and their input schema, then action='call' to invoke one. MCP servers are launched as local subprocesses over stdio, identified by the exact same command/args used to start them (e.g. 'npx @modelcontextprotocol/server-filesystem /some/dir'). Special case: pass command='codegraph-mcp' (args not needed) to launch the CodeGraph MCP server bundled with xcoder against whichever CodeGraph instance is currently connected under Platform > Integrations.",
+        "Call a tool exposed by a Model Context Protocol (MCP) server. Use action='list' first to discover which tools a server offers and their input schema, then action='call' to invoke one. Two ways to reach a server: 'command' (+ optional 'args') spawns it locally over stdio, identified by the exact command used to start it (e.g. 'npx @modelcontextprotocol/server-filesystem /some/dir'); 'url' calls a already-running network MCP server over streamable-http instead (e.g. a server running as its own docker-compose service). Special case: pass command='codegraph-mcp' (no args/url needed) to reach the CodeGraph MCP server bundled with xcoder — resolves automatically to whichever transport can actually reach it for the CodeGraph instance currently connected under Platform > Integrations.",
       parameters: {
         type: "object",
         properties: {
           action: { type: "string", description: "'list' to discover available tools, or 'call' to invoke one." },
-          command: { type: "string", description: "Executable to launch the MCP server, e.g. 'npx' or 'python'." },
-          args: { type: "array", items: { type: "string" }, description: "Arguments passed to the MCP server command." },
+          command: { type: "string", description: "Executable to launch the MCP server over stdio, e.g. 'npx' or 'python'. Mutually exclusive with 'url'." },
+          args: { type: "array", items: { type: "string" }, description: "Arguments passed to the MCP server command (stdio mode only)." },
+          url: { type: "string", description: "HTTP endpoint of a running streamable-http MCP server, e.g. 'http://codegraph-mcp:8900/mcp'. Mutually exclusive with 'command'." },
           toolName: { type: "string", description: "Required for action='call': the MCP tool name, from a prior action='list' call." },
           toolArgs: { type: "object", description: "Required for action='call': arguments matching the MCP tool's input schema." },
         },
-        required: ["action", "command"],
+        required: ["action"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "web_search_tool",
+      description:
+        "Search the public web via DuckDuckGo (no API key required) and return organic results — title, URL, and snippet for each. Use this to look up current information, documentation, or anything outside the codebase itself. Supports DuckDuckGo's search operators (e.g. 'site:github.com', 'filetype:pdf', quoted exact phrases). Follow up with summarize_url_tool on a promising result to read the full page.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: { type: "string", description: "The search query." },
+          limit: { type: "number", description: "Max results to return, 1-20. Default 8." },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
+      name: "security_ops_tool",
+      description:
+        "Run a real, local, read-only Blue Team (defensive/audit) or Red Team (offensive/probing) security check — log scanning, port audit, file-integrity baselining, dependency vuln audit, firewall status, TLS cert expiry, SSH auth-log review, backup freshness (blue); TCP port scanning, subdomain enumeration, HTTP security-header audit, offline password-strength checking, dependency vuln scanning, TLS config checking (red). Nothing here writes to, modifies, or exploits a target. Every red-team tool (and blue's cert_expiry_check) that names a network host is refused unless that host is on the server's TARGET_ALLOWLIST — there is no 'scan anything' mode, so expect a REFUSED result against a host an admin hasn't explicitly allowed. phishing_simulation_sender is deliberately not implemented as a real send; calling it returns an explanation and a pointer to a purpose-built platform instead.",
+      parameters: {
+        type: "object",
+        properties: {
+          team: { type: "string", description: "'blue' or 'red'." },
+          toolId: {
+            type: "string",
+            description:
+              "Blue: 'log_scan', 'port_audit', 'file_integrity_check', 'dependency_audit', 'firewall_status', 'cert_expiry_check', 'ssh_auth_log_review', 'backup_verify'. Red: 'port_scanner', 'subdomain_enum', 'http_header_audit', 'password_strength_audit', 'dependency_vuln_scan', 'tls_config_check', 'phishing_simulation_sender' (always refused by design).",
+          },
+          params: {
+            type: "object",
+            description:
+              "Tool-specific parameters as string values, e.g. log_scan: {source, pattern, lines}; port_audit: {host, expected_ports}; file_integrity_check: {path, baseline}; dependency_audit/dependency_vuln_scan: {repo, ecosystem}; firewall_status: {engine}; cert_expiry_check: {domain, warn_days}; ssh_auth_log_review: {window}; backup_verify: {path, max_age_hours}; port_scanner: {target, port_range, scan_type}; subdomain_enum: {domain}; http_header_audit: {url}; password_strength_audit: {hash_type, hashes}; tls_config_check: {host, port}.",
+          },
+        },
+        required: ["team", "toolId"],
       },
     },
   },

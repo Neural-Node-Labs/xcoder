@@ -1,3 +1,16 @@
+# --- CodeGraph Explorer UI build stage -----------------------------------------
+# The Explorer is served BY this api container at /codegraph-ui (see server.ts), so its static
+# bundle has to be inside this image — previously it wasn't copied in at all, which is why the
+# embedded Explorer came up as an empty panel under docker-compose (the mount 404'd).
+# --base=/codegraph-ui/ is required: without it Vite emits /assets/... URLs, which resolve
+# against the xcoder SPA's root instead of this mount and the page renders blank.
+FROM node:20-slim AS codegraph-ui-build
+WORKDIR /cgui
+COPY integrations/codegraph/codegraph-ui/package.json integrations/codegraph/codegraph-ui/package-lock.json ./
+RUN npm ci
+COPY integrations/codegraph/codegraph-ui/ ./
+RUN npx vite build --base=/codegraph-ui/
+
 # --- Build stage -------------------------------------------------------------
 FROM kalilinux/kali-rolling AS build
 WORKDIR /app
@@ -37,6 +50,9 @@ RUN apt-get update && apt-get install -y \
 
 COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/dist ./dist
+# Resolves to integrations/codegraph/codegraph-ui/dist relative to dist/api/ — see
+# CODEGRAPH_UI_DIST in src/api/codegraphProcess.ts. Only the built static files, not the source.
+COPY --from=codegraph-ui-build /cgui/dist ./integrations/codegraph/codegraph-ui/dist
 COPY package.json ./
 COPY docker-entrypoint.sh ./docker-entrypoint.sh
 RUN chmod +x ./docker-entrypoint.sh

@@ -2,7 +2,7 @@ import express from "express";
 import cors from "cors";
 import { createRouter } from "./routes.js";
 import { codegraphProxyMiddleware } from "./codegraphProxy.js";
-import { CODEGRAPH_UI_DIST } from "./codegraphProcess.js";
+import { CODEGRAPH_UI_DIST, autoConnectFromEnv } from "./codegraphProcess.js";
 // Auth is always enabled — no more static admin credentials
 
 export interface ApiServerOptions {
@@ -69,8 +69,15 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
   app.use("/api/v1", router);
 
   // 404 catch-all
-  app.use((_req, res) => {
-    res.status(404).json({ success: false, error: "Not found" });
+  app.use((req, res) => {
+    // Echoes back exactly what arrived (method + path) rather than a bare "Not found" — the
+    // single most useful thing for diagnosing a misrouted request (wrong reverse-proxy rewrite,
+    // a client missing the /api/v1 prefix, a stale frontend build hitting a renamed route,
+    // etc.): the caller can immediately see whether xcoder received the path they expected.
+    res.status(404).json({
+      success: false,
+      error: `Not found: ${req.method} ${req.originalUrl}. Every xcoder endpoint is mounted under /api/v1 — if that prefix is missing here, check whatever sits in front of this server (reverse proxy, dev server proxy) rather than xcoder's own routing.`,
+    });
   });
 
   // Global error handler
@@ -81,6 +88,11 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
 
   const server = app.listen(port, host, () => {
     console.log(`[xcoder API] Listening on http://${host}:${port}`);
+    // Fire-and-forget: if XCODER_CODEGRAPH_URL + XCODER_CODEGRAPH_ADMIN_PASSWORD are set (the
+    // docker-compose `codegraph-api` service's shape), connect to it in the background. Doesn't
+    // block xcoder's own startup — failure here is logged and left for manual connection from
+    // Platform > Tools rather than crashing the API server over an optional integration.
+    autoConnectFromEnv();
     console.log(`[xcoder API] Endpoints:`);
     console.log(`  POST /api/v1/login`);
     console.log(`  POST /api/v1/logout`);

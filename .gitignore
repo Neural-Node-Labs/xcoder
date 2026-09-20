@@ -11,4 +11,10 @@ ui/dist/
 secrets/
 /.idea/
 /ollama_models/
-/.idea/
+
+# Playwright e2e artifacts (ui/e2e) — reports, traces, screenshots, videos, browser binaries.
+# The specs themselves and ui/e2e/test_scenario.md ARE tracked; only run output is ignored.
+ui/test-results/
+ui/playwright-report/
+ui/blob-report/
+ui/playwright/.cache/

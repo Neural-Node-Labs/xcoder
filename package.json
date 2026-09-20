@@ -21,9 +21,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:init": "node dist/cli/index.js --initialize-db",
     "codegraph:install": "python3 -m venv integrations/codegraph/codegraph/.venv && integrations/codegraph/codegraph/.venv/bin/pip install -r integrations/codegraph/codegraph/requirements.txt -r integrations/codegraph/codegraph-mcp/requirements.txt",
-    "codegraph:ui:build": "cd integrations/codegraph/codegraph-ui && npm install && npm run build"
+    "codegraph:ui:build": "cd integrations/codegraph/codegraph-ui && npm install && npm run build -- --base=/codegraph-ui/"
   },
   "dependencies": {
+    "adm-zip": "^0.5.16",
     "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0",
@@ -41,6 +42,7 @@
     "typescript": "^5.6.3"
   },
   "devDependencies": {
+    "@types/adm-zip": "^0.5.7",
     "@types/archiver": "^6.0.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",

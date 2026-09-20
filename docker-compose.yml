@@ -32,6 +32,16 @@ services:
         condition: service_healthy
       ollama:
         condition: service_healthy
+      # Blocks startup until the default model is actually pulled — see ollama-pull-model.
+      ollama-pull-model:
+        condition: service_completed_successfully
+      # No depends_on entry for codegraph-api here, even though the environment below points at
+      # it — CodeGraph is a sibling service (see codegraph-api further down) and xcoder's core
+      # API must come up the same way whether or not it is running, whether the
+      # codegraph-api image builds successfully, or how long it takes to become healthy. If
+      # XCODER_CODEGRAPH_URL resolves to nothing reachable, autoConnectFromEnv() below just
+      # retries for up to 120s, logs a warning, and xcoder proceeds without CodeGraph — it never
+      # blocks startup on it.
     environment:
       DATABASE_HOST: postgres
       DATABASE_PORT: 5432
@@ -47,6 +57,17 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       DEEPSEEK_API_KEY: ${DEEPSEEK_API_KEY:-}
       XCODER_MOCK_LLM: ${XCODER_MOCK_LLM:-}
+      # CodeGraph runs as its own sibling service in this deployment (see codegraph-api /
+      # codegraph-mcp below), not spawned locally — the api image never copies
+      # integrations/codegraph/ in and has no Python runtime, so a local spawn isn't even
+      # possible here. xcoder logs in as codegraph-api's admin itself at startup (see
+      # autoConnectFromEnv() in codegraphProcess.ts) using the same ADMIN_PASSWORD given to
+      # codegraph-api below, rather than needing a pre-known API key. These are harmless to
+      # leave set even if the codegraph services are scaled to 0 (see below) — xcoder just
+      # won't find anything at these URLs and continues without the integration.
+      XCODER_CODEGRAPH_URL: http://codegraph-api:8000
+      XCODER_CODEGRAPH_ADMIN_PASSWORD: ${CODEGRAPH_ADMIN_PASSWORD:-codegraph_admin_pass}
+      XCODER_CODEGRAPH_MCP_URL: http://codegraph-mcp:8900/mcp
     volumes:
       # Bakes in agent/config/llm.yaml (Ollama by default) — the Dockerfile doesn't COPY
       # agent/ into the image, so without this mount the container falls back to the
@@ -87,67 +108,138 @@ services:
 
   ollama:
     image: ollama/ollama:latest
+    container_name: ollama
     restart: unless-stopped
     ports:
       - "11434:11434"
-    # Safe array formatting: No broken string text or mapping value syntax errors
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - |
-        ollama serve &
-        sleep 5
-        
-        # Model 1: qwen2.5-coder:0.5b
-        if ! ollama list | grep -q 'qwen2.5-coder:0.5b'; then
-          echo "Pulling qwen2.5-coder:0.5b..."
-          ollama pull qwen2.5-coder:0.5b
-        fi
-
-        # Model 2: tinyllama
-        if ! ollama list | grep -q 'tinyllama'; then
-          echo "Pulling tinyllama..."
-          ollama pull tinyllama
-        fi
-        
-        # Model 3: Add your new model here (e.g., llama3.2:1b)
-        if ! ollama list | grep -q 'llama3.2:1b'; then
-          echo "Pulling llama3.2:1b..."
-          ollama pull llama3.2:1b
-        fi
-
-        wait
+    volumes:
+      # Named volume rather than a ./ollama_models bind mount: model blobs are large, opaque,
+      # and root-owned, and a bind mount drops them in the working tree where they get picked
+      # up by backups and IDE indexers. Use `docker volume rm xcoder_ollama_storage` to reset.
+      - ollama_storage:/root/.ollama
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:11434/api/tags || exit 1"]
+      # Deliberately only checks that the server is answering, NOT that any model is pulled.
+      # Tying this to model presence would deadlock the stack whenever a pull failed, since
+      # `api` waits on this condition. Waiting for the models is ollama-pull-model's job below.
+      test: ["CMD-SHELL", "ollama list > /dev/null 2>&1 || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 5
-      start_period: 300s
-    volumes:
-      - ollama-data:/root/.ollama
-
-  open-webui:
-    image: ghcr.io/open-webui/open-webui:main
-    restart: unless-stopped
-    depends_on:
-      ollama:
-        condition: service_healthy
-    ports:
-      - "3000:8080"
-    environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
-      - WEBUI_SECRET_KEY=xcoder-secret-key-123456
-      # Disable local HuggingFace embedding downloads to prevent startup hang
-      - RAG_EMBEDDING_ENGINE=""
-      - ENABLE_RAG_LOCAL_WEB_FETCH=False
-    volumes:
-      - open-webui-data:/app/backend/data
+      start_period: 15s
     deploy:
       resources:
         limits:
           cpus: "2.0"
-          memory: 2048M
+          memory: 4096M
+
+  # ─── One-shot model puller ────────────────────────────────────────────────────
+  # Pulls the models the Chat tab's picker offers, then exits. `api` waits on this via
+  # `condition: service_completed_successfully`, so the backend never comes up pointing at an
+  # Ollama that hasn't got the default model yet — previously the first chat after a cold
+  # start would fail with a model-not-found error while the pull was still running.
+  #
+  # Only granite4:1b (the configured default in agent/config/llm.yaml) is required: if it
+  # fails to pull, this container exits non-zero and `api` correctly refuses to start rather
+  # than booting into a broken state. The alternates are best-effort — a transient failure
+  # pulling one of them shouldn't take the whole stack down, it just means that entry in the
+  # model picker isn't available until someone pulls it.
+  ollama-pull-model:
+    image: curlimages/curl:latest
+    container_name: ollama-pull-model
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: "no"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -e
+        until curl -sf http://ollama:11434/api/tags > /dev/null; do
+          echo "Waiting for ollama..."
+          sleep 2
+        done
+
+        echo "Pulling required default model: granite4:1b"
+        curl -sf -X POST http://ollama:11434/api/pull -d '{"name": "granite4:1b"}'
+
+        for model in qwen2.5:1.5b ministral-3:3b hermes3:3b smollm2:1.7b; do
+          echo "Pulling optional model: $$model"
+          curl -sf -X POST http://ollama:11434/api/pull -d "{\"name\": \"$$model\"}" \
+            || echo "WARNING: could not pull $$model — the model picker will not offer it until it is pulled."
+        done
+
+        echo "Model pull complete."
+
+  # ─── CodeGraph (bundled, sibling services) ────────────────────────────────────
+  # Runs as its own containers rather than inside the `api` container — the api image has no
+  # Python runtime and never copies integrations/codegraph/ in, so a local spawn (what happens
+  # in plain `npm run serve` outside Docker — see codegraphProcess.ts) isn't possible here by
+  # construction. xcoder's `api` service instead connects to codegraph-api over this compose
+  # network and reaches codegraph-mcp as a real network MCP service via streamable-http (see
+  # XCODER_CODEGRAPH_URL / XCODER_CODEGRAPH_MCP_URL above).
+  #
+  # Both start with a plain `docker compose up` — no profile flag needed. (They used to sit
+  # behind a `codegraph` profile, which meant the CodeGraph page in the UI was permanently empty
+  # unless you knew to pass --profile.) Neither is a dependency of `api`: xcoder connects to
+  # codegraph-api in the background and simply runs without it if it never comes up. To run the
+  # stack without CodeGraph anyway: `docker compose up --scale codegraph-api=0 --scale codegraph-mcp=0`.
+  codegraph-api:
+    build:
+      context: ./integrations/codegraph/codegraph
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    environment:
+      # Admin login is how xcoder (and codegraph-mcp, below) obtain a real API key — CodeGraph
+      # generates that key itself on first boot, so there's no key to hand out ahead of time,
+      # only the password used to log in and fetch it. Set CODEGRAPH_ADMIN_PASSWORD in .env for
+      # anything beyond local/eval use.
+      ADMIN_PASSWORD: ${CODEGRAPH_ADMIN_PASSWORD:-codegraph_admin_pass}
+      CODEGRAPH_SECRET_KEY: ${CODEGRAPH_SECRET_KEY:-change_this_codegraph_secret_key}
+    volumes:
+      - xcoder-codegraph-data:/data
+    ports:
+      # Exposed on the host for direct API/debugging access; remove if not needed.
+      - "${CODEGRAPH_API_PORT:-8801}:8000"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "1.0"
+          memory: 512M
+
+  codegraph-mcp:
+    build:
+      context: ./integrations/codegraph/codegraph-mcp
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    depends_on:
+      codegraph-api:
+        condition: service_healthy
+    environment:
+      CODEGRAPH_API_URL: http://codegraph-api:8000
+      # CODEGRAPH_API_KEY is deliberately left unset — entrypoint.sh fetches a real one at
+      # container startup by logging in with this same password (see codegraph-api above).
+      ADMIN_PASSWORD: ${CODEGRAPH_ADMIN_PASSWORD:-codegraph_admin_pass}
+      MCP_TRANSPORT: streamable-http
+      MCP_HOST: "0.0.0.0"
+      MCP_PORT: "8900"
+    ports:
+      # Exposed on the host for debugging with an external MCP client; xcoder's `api` service
+      # reaches this over the compose network regardless.
+      - "${CODEGRAPH_MCP_PORT:-8900}:8900"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 256M
+
 
 volumes:
   xcoder-postgres-data:
-  open-webui-data:
-  ollama-data:
+  xcoder-codegraph-data:
+  ollama_storage:

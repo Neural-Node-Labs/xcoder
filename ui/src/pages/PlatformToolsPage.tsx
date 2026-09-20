@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { usePageActive, useOnActivate } from "../context/PageActive";
 import { api, PlatformToolEntry, PlatformIntegrationEntry, CodegraphStatus } from "../api/client";
 import { useAuth } from "../context/AuthContext";
 import { Page } from "../components/Sidebar";
@@ -38,9 +39,13 @@ export function PlatformToolsPage({ onNavigate }: { onNavigate: (page: Page) => 
     refreshTools();
     refreshIntegrations();
   }, []);
+  useOnActivate(() => {
+    refreshTools();
+    refreshIntegrations();
+  });
 
   const codegraph = integrations.find((i) => i.id === "codegraph");
-  const bundledRunning = cgStatus?.running ?? false;
+  const bundledRunning = (cgStatus?.running && !cgStatus.external) ?? false;
 
   const filteredTools = tools.filter(
     (t) => !toolFilter || t.name.toLowerCase().includes(toolFilter.toLowerCase()) || t.description.toLowerCase().includes(toolFilter.toLowerCase())
@@ -172,31 +177,44 @@ export function PlatformToolsPage({ onNavigate }: { onNavigate: (page: Page) => 
               </div>
             </div>
 
-            {cgStatus.bundled && (
+            {cgStatus.running && cgStatus.external ? (
               <div className="row" style={{ gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-                {bundledRunning ? (
-                  <>
-                    <span className="badge badge-green">Bundled server running on :{cgStatus.port}</span>
-                    <button className="btn btn-sm btn-primary" onClick={() => onNavigate("codegraph")}>
-                      Open Explorer
-                    </button>
-                    {isAdmin && (
-                      <button className="btn btn-sm btn-danger" onClick={stopBundled} disabled={busy}>
-                        Stop
-                      </button>
-                    )}
-                  </>
-                ) : isAdmin ? (
-                  <button className="btn btn-sm btn-primary" onClick={startBundled} disabled={busy}>
-                    {busy ? <span className="spinner" /> : "▶ Start bundled CodeGraph"}
-                  </button>
-                ) : (
-                  <span className="text-2" style={{ fontSize: 11 }}>Ask an admin to start CodeGraph.</span>
-                )}
+                <span className="badge badge-green">Connected to {cgStatus.baseUrl} (sibling service)</span>
+                <button className="btn btn-sm btn-primary" onClick={() => onNavigate("codegraph")}>
+                  Open Explorer
+                </button>
+                <span className="text-2" style={{ fontSize: 11 }}>
+                  Running as its own docker-compose service — stop/start it with{" "}
+                  <code className="mono">docker compose stop codegraph-api</code>, not from here.
+                </span>
               </div>
+            ) : (
+              cgStatus.bundled && (
+                <div className="row" style={{ gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
+                  {bundledRunning ? (
+                    <>
+                      <span className="badge badge-green">Bundled server running on {cgStatus.baseUrl}</span>
+                      <button className="btn btn-sm btn-primary" onClick={() => onNavigate("codegraph")}>
+                        Open Explorer
+                      </button>
+                      {isAdmin && (
+                        <button className="btn btn-sm btn-danger" onClick={stopBundled} disabled={busy}>
+                          Stop
+                        </button>
+                      )}
+                    </>
+                  ) : isAdmin ? (
+                    <button className="btn btn-sm btn-primary" onClick={startBundled} disabled={busy}>
+                      {busy ? <span className="spinner" /> : "▶ Start bundled CodeGraph"}
+                    </button>
+                  ) : (
+                    <span className="text-2" style={{ fontSize: 11 }}>Ask an admin to start CodeGraph.</span>
+                  )}
+                </div>
+              )
             )}
 
-            {!bundledRunning && codegraph.connected && isAdmin && (
+            {!cgStatus.running && codegraph.connected && isAdmin && (
               <button className="btn btn-sm btn-danger" style={{ marginBottom: 14 }} onClick={disconnect} disabled={busy}>
                 Disconnect
               </button>

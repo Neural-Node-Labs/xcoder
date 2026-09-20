@@ -140,3 +140,85 @@ describe("per-user task rate limiting (security fix — /chat and /chat/plan had
     expect(auth.checkTaskRateLimit("alice").limited).toBe(false);
   });
 });
+
+describe("per-user workspace rate limiting (Workspace file browser write/create/delete routes)", () => {
+  it("allows writes under the configured limit", async () => {
+    vi.resetModules();
+    process.env.XCODER_WORKSPACE_RATE_MAX = "3";
+    process.env.XCODER_WORKSPACE_RATE_WINDOW_MS = "60000";
+    const auth = await import("../auth.js");
+
+    expect(auth.checkWorkspaceRateLimit("user-a").limited).toBe(false);
+    expect(auth.checkWorkspaceRateLimit("user-a").limited).toBe(false);
+    expect(auth.checkWorkspaceRateLimit("user-a").limited).toBe(false);
+
+    delete process.env.XCODER_WORKSPACE_RATE_MAX;
+    delete process.env.XCODER_WORKSPACE_RATE_WINDOW_MS;
+  });
+
+  it("blocks writes once the per-user limit is exceeded", async () => {
+    vi.resetModules();
+    process.env.XCODER_WORKSPACE_RATE_MAX = "2";
+    process.env.XCODER_WORKSPACE_RATE_WINDOW_MS = "60000";
+    const auth = await import("../auth.js");
+
+    auth.checkWorkspaceRateLimit("user-b");
+    auth.checkWorkspaceRateLimit("user-b");
+    const third = auth.checkWorkspaceRateLimit("user-b");
+
+    expect(third.limited).toBe(true);
+    expect(third.retryAfterMs).toBeGreaterThan(0);
+
+    delete process.env.XCODER_WORKSPACE_RATE_MAX;
+    delete process.env.XCODER_WORKSPACE_RATE_WINDOW_MS;
+  });
+
+  it("is a completely separate bucket from the task rate limiter — editing files doesn't eat into a user's task-submission budget, or vice versa", async () => {
+    vi.resetModules();
+    process.env.XCODER_TASK_RATE_MAX = "1";
+    process.env.XCODER_TASK_RATE_WINDOW_MS = "60000";
+    process.env.XCODER_WORKSPACE_RATE_MAX = "1";
+    process.env.XCODER_WORKSPACE_RATE_WINDOW_MS = "60000";
+    const auth = await import("../auth.js");
+
+    // Exhaust this user's task-submission limit...
+    auth.checkTaskRateLimit("carol");
+    expect(auth.checkTaskRateLimit("carol").limited).toBe(true);
+    // ...and confirm that has zero effect on the same user's workspace-edit limit.
+    expect(auth.checkWorkspaceRateLimit("carol").limited).toBe(false);
+    // and the reverse: exhausting workspace edits doesn't touch the task budget, which is
+    // already exhausted above but for a genuinely independent reason.
+    expect(auth.checkWorkspaceRateLimit("carol").limited).toBe(true);
+
+    delete process.env.XCODER_TASK_RATE_MAX;
+    delete process.env.XCODER_TASK_RATE_WINDOW_MS;
+    delete process.env.XCODER_WORKSPACE_RATE_MAX;
+    delete process.env.XCODER_WORKSPACE_RATE_WINDOW_MS;
+  });
+
+  it("one user hitting their workspace-edit limit does NOT affect a different user's", async () => {
+    vi.resetModules();
+    process.env.XCODER_WORKSPACE_RATE_MAX = "1";
+    process.env.XCODER_WORKSPACE_RATE_WINDOW_MS = "60000";
+    const auth = await import("../auth.js");
+
+    auth.checkWorkspaceRateLimit("noisy-editor");
+    const noisyBlocked = auth.checkWorkspaceRateLimit("noisy-editor");
+    const quietEditor = auth.checkWorkspaceRateLimit("quiet-editor");
+
+    expect(noisyBlocked.limited).toBe(true);
+    expect(quietEditor.limited).toBe(false);
+
+    delete process.env.XCODER_WORKSPACE_RATE_MAX;
+    delete process.env.XCODER_WORKSPACE_RATE_WINDOW_MS;
+  });
+
+  it("defaults to a generous limit (300/5min) suited to interactive editing, not task submission", async () => {
+    vi.resetModules();
+    const auth = await import("../auth.js");
+    for (let i = 0; i < 300; i++) {
+      expect(auth.checkWorkspaceRateLimit("default-limits-user").limited).toBe(false);
+    }
+    expect(auth.checkWorkspaceRateLimit("default-limits-user").limited).toBe(true);
+  });
+});
