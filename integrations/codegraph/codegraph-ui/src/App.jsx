@@ -17,37 +17,37 @@ function ProjectSwitcher({ projects, selectedProjectId, onSelect, onManage }) {
       <button
         onClick={() => setOpen((o) => !o)}
         className="flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5"
-        style={{ background: "#171c26", border: "1px solid #262d3a", color: "#e8ecf4", maxWidth: 220 }}
+        style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)", color: "var(--text-primary)", maxWidth: 220 }}
       >
         <FolderGit2 size={13} color="#eab04c" />
         <span className="truncate">{current ? current.name : "No project selected"}</span>
-        <ChevronDown size={12} color="#7c8698" />
+        <ChevronDown size={12} color="var(--text-muted)" />
       </button>
       {open && (
         <>
           <div className="fixed inset-0 z-40" onClick={() => setOpen(false)} />
           <div
             className="absolute right-0 mt-1 z-50 rounded-md overflow-hidden"
-            style={{ background: "#12161e", border: "1px solid #262d3a", minWidth: 220, maxHeight: 320, overflowY: "auto" }}
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--hairline)", minWidth: 220, maxHeight: 320, overflowY: "auto" }}
           >
             {projects.length === 0 && (
-              <div className="text-xs px-3 py-2" style={{ color: "#4c5566" }}>No projects yet</div>
+              <div className="text-xs px-3 py-2" style={{ color: "var(--text-faint)" }}>No projects yet</div>
             )}
             {projects.map((p) => (
               <button
                 key={p.id}
                 onClick={() => { onSelect(p.id); setOpen(false); }}
                 className="w-full text-left text-xs px-3 py-2 flex items-center justify-between gap-2"
-                style={{ background: p.id === selectedProjectId ? "#171c26" : "transparent", color: "#e8ecf4" }}
+                style={{ background: p.id === selectedProjectId ? "var(--bg-raised)" : "transparent", color: "var(--text-primary)" }}
               >
                 <span className="truncate">{p.name}</span>
-                <span className="text-[10px] mono" style={{ color: "#4c5566" }}>{p.status}</span>
+                <span className="text-[10px] mono" style={{ color: "var(--text-faint)" }}>{p.status}</span>
               </button>
             ))}
             <button
               onClick={() => { onManage(); setOpen(false); }}
               className="w-full text-left text-xs px-3 py-2"
-              style={{ borderTop: "1px solid #262d3a", color: "#eab04c" }}
+              style={{ borderTop: "1px solid var(--hairline)", color: "#eab04c" }}
             >
               Manage projects...
             </button>
@@ -140,9 +140,9 @@ function Shell() {
   const needsProject = !selectedProjectId || !currentProject;
 
   return (
-    <div className="w-full h-full flex flex-col" style={{ background: "#0a0d12", color: "#e8ecf4", fontFamily: '-apple-system, "Segoe UI", sans-serif', minHeight: "100vh" }}>
-      <div className="flex items-center gap-1 px-4 shrink-0" style={{ height: 48, borderBottom: "1px solid #262d3a", background: "#12161e" }}>
-        <div className="flex items-center gap-2 pr-4 mr-2" style={{ borderRight: "1px solid #262d3a" }}>
+    <div className="w-full h-full flex flex-col" style={{ background: "var(--bg-base)", color: "var(--text-primary)", fontFamily: '-apple-system, "Segoe UI", sans-serif', minHeight: "100vh" }}>
+      <div className="flex items-center gap-1 px-4 shrink-0" style={{ height: 48, borderBottom: "1px solid var(--hairline)", background: "var(--bg-panel)" }}>
+        <div className="flex items-center gap-2 pr-4 mr-2" style={{ borderRight: "1px solid var(--hairline)" }}>
           <Waypoints size={16} color="#eab04c" />
           <span className="text-sm font-semibold">Codegraph</span>
         </div>
@@ -155,7 +155,7 @@ function Shell() {
               key={t.id}
               onClick={() => setTab(t.id)}
               className="flex items-center gap-1.5 text-xs rounded-md px-3 py-1.5"
-              style={{ background: active ? "#171c26" : "transparent", color: active ? "#e8ecf4" : "#7c8698" }}
+              style={{ background: active ? "var(--bg-raised)" : "transparent", color: active ? "var(--text-primary)" : "var(--text-muted)" }}
             >
               <Icon size={13} /> {t.label}
             </button>
@@ -169,10 +169,10 @@ function Shell() {
             onSelect={selectProject}
             onManage={() => setTab("projects")}
           />
-          <span className="text-[11px] mono" style={{ color: "#7c8698" }}>
-            {user?.username} <span style={{ color: "#4c5566" }}>({user?.role})</span>
+          <span className="text-[11px] mono" style={{ color: "var(--text-muted)" }}>
+            {user?.username} <span style={{ color: "var(--text-faint)" }}>({user?.role})</span>
           </span>
-          <button onClick={logout} className="flex items-center gap-1.5 text-xs" style={{ color: "#7c8698" }}>
+          <button onClick={logout} className="flex items-center gap-1.5 text-xs" style={{ color: "var(--text-muted)" }}>
             <LogOut size={13} /> Sign out
           </button>
         </div>
@@ -213,15 +213,15 @@ function Shell() {
 function EmptyProjectState({ onManage }) {
   return (
     <div className="flex-1 flex flex-col items-center justify-center gap-3 text-center px-6">
-      <FolderGit2 size={28} color="#4c5566" />
-      <div className="text-sm" style={{ color: "#e8ecf4" }}>No project selected</div>
-      <div className="text-xs max-w-sm" style={{ color: "#7c8698" }}>
+      <FolderGit2 size={28} color="var(--text-faint)" />
+      <div className="text-sm" style={{ color: "var(--text-primary)" }}>No project selected</div>
+      <div className="text-xs max-w-sm" style={{ color: "var(--text-muted)" }}>
         Create a project, upload a .zip of its source, and index it to see its dependency graph here.
       </div>
       <button
         onClick={onManage}
         className="text-xs rounded-md px-3 py-1.5 mt-1"
-        style={{ background: "#eab04c", color: "#0a0d12" }}
+        style={{ background: "#eab04c", color: "var(--bg-base)" }}
       >
         Go to Projects
       </button>

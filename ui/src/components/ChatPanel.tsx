@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api, ModelListResponse, Project } from "../api/client";
 import { Hologram } from "./Hologram";
+import { JarvisHologram, JarvisMood } from "./JarvisHologram";
+import { useAssistantName } from "../assistantName";
 import { useSpeechRecognition, useSpeechSynthesis, useUiSounds } from "../hooks/useSpeech";
 import { VoiceButton, SpeakToggle, SoundToggle, InterimTranscript } from "./VoiceControls";
 import { usePageActive } from "../context/PageActive";
@@ -18,11 +20,23 @@ interface ChatMessage {
  * call — see ChatRequest/ChatResponse in src/api/types.ts), so this keeps the conversation
  * client-side and replays it as context on every turn.
  *
- * Laid out as a centered console with the Hologram standing in for JARVIS at the top. The
+ * Laid out as a centered console with the Hologram standing in for the assistant (see
+ * assistantName.ts — configurable in Settings, defaults to "Xcoder AI"; this used to be a
+ * hardcoded "JARVIS" here and in the Hologram's default theme label, which is a trademarked
+ * fictional name this app has no claim to) at the top. The
  * hologram is a presence indicator only: it shows whether the engine is idle or working, and
  * nothing else. It used to also type out a truncated copy of the latest reply, which meant
  * every answer appeared twice on screen — once clipped in the hologram, once in full in the
  * bubble right below it. The transcript is the one place replies live now.
+ *
+ * Alongside it sits a small <JarvisHologram> mood badge — a separate concept from the Hologram
+ * above's `theme` (a fixed visual skin the user picks) and `status` (busy/idle wording): mood
+ * is the LLM's own read on the conversation, set via set_mood_tool during the run (see
+ * src/tools/moodTool.ts) and returned as ChatResponse.mood. It persists server-side per
+ * workspace until the tool is called again, so this badge reflects whatever the *last* chat
+ * response said the mood was — including on the very first message of a session, where that
+ * mood may already be non-default (a previous chat, possibly from another browser tab, could
+ * have set it, or it could be the workspace's first-ever random pick — see moodTool.ts).
  */
 export function ChatPanel({ projects, visible = true }: { projects: Project[]; visible?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -32,6 +46,8 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
   const [error, setError] = useState<string | null>(null);
   const [modelInfo, setModelInfo] = useState<ModelListResponse | null>(null);
   const [model, setModel] = useState("");
+  const [mood, setMood] = useState<JarvisMood>("ready");
+  const assistantName = useAssistantName();
   const threadRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -75,7 +91,14 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
       .models()
       .then((info) => {
         setModelInfo(info);
-        setModel(info.default);
+        // Persist the user's explicit override across reloads (a plain `useState` here reset to
+        // the server default every time the page loaded, so a deliberate pick in this tab —
+        // unlike everything else, which reads Settings' saved LLM config fresh) silently
+        // reverted the moment you left and came back. Only honor the saved pick if it's still a
+        // real option (the local Ollama model list can change between sessions); otherwise fall
+        // back to whatever the server currently reports as default.
+        const saved = localStorage.getItem("xcoder_chat_model");
+        setModel(saved && info.models.includes(saved) ? saved : info.default);
       })
       // A failure here just means no picker — chat still works on the server's default model,
       // so there's nothing worth interrupting the user about.
@@ -113,6 +136,10 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
         model: model && model !== modelInfo?.default ? model : undefined,
       });
       setMessages((prev) => [...prev, { role: "assistant", content: res.result }]);
+      // See moodTool.ts: persists server-side per workspace until set_mood_tool is called
+      // again, so this may be unchanged from the previous turn's mood rather than a fresh pick
+      // every time — that's expected, not a bug.
+      if (res.mood) setMood(res.mood);
       sounds.play("receive");
       synthesis.speak(res.result);
     } catch (err) {
@@ -144,10 +171,16 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
           thinking={busy}
           showThemeSelector={false}
           showReadout={false}
+          assistantName={assistantName}
         />
       </div>
 
       <div className="jarvis-meta-row">
+        <div className="jarvis-mood-badge" title={`Assistant mood: ${mood} — set by the LLM via set_mood_tool; persists until it calls that tool again.`}>
+          <JarvisHologram mood={mood} size={40} hideLabel hideBars />
+          <span style={{ textTransform: "capitalize" }}>{mood}</span>
+        </div>
+
         {projects.length > 0 && (
           <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project">
             <option value="">(active project / server cwd)</option>
@@ -162,7 +195,13 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
         {modelInfo && modelInfo.models.length > 1 && (
           <select
             value={model}
-            onChange={(e) => setModel(e.target.value)}
+            onChange={(e) => {
+              setModel(e.target.value);
+              // See the load effect above: this is what makes the pick survive a reload instead
+              // of silently reverting to the server default every time the tab remounts.
+              if (e.target.value === modelInfo.default) localStorage.removeItem("xcoder_chat_model");
+              else localStorage.setItem("xcoder_chat_model", e.target.value);
+            }}
             aria-label="Model"
             title={
               modelInfo.source === "fallback"
@@ -214,7 +253,7 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
               value={input}
               onChange={(e) => setInput(e.target.value)}
               onKeyDown={onKeyDown}
-              placeholder="Speak or type a directive for JARVIS… (Enter to send, Shift+Enter for a new line)"
+              placeholder={`Speak or type a directive for ${assistantName}… (Enter to send, Shift+Enter for a new line)`}
               disabled={busy}
             />
             <VoiceButton recognition={recognition} />

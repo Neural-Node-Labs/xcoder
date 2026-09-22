@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
-export type HologramTheme = 'jarvis-classic' | 'superman' | 'jarvis-danger' | 'goku' | 'raider' | 'kraken';
+export type HologramTheme = 'classic' | 'superman' | 'danger-red' | 'goku' | 'raider' | 'kraken';
 
 export interface HologramProps {
   size?: number;
@@ -9,6 +9,13 @@ export interface HologramProps {
   thinking?: boolean;
   responseText?: string;
   onThemeChange?: (theme: HologramTheme) => void;
+  /** Display name shown by the "classic" theme (see THEMES.classic — the assistant's own
+   *  default persona skin, as opposed to the other themes which are named after unrelated
+   *  characters/franchises on purpose). Defaults to DEFAULT_ASSISTANT_NAME from
+   *  assistantName.ts; callers that already have the configured name (see useAssistantName())
+   *  should pass it through so this stays in sync with Settings instead of showing a stale
+   *  default. */
+  assistantName?: string;
   /** Hides the theme-picker button row — used when embedding the hologram inside a fixed layout
    *  (e.g. the Chat header) where switching themes isn't a feature that page wants to expose. */
   showThemeSelector?: boolean;
@@ -42,13 +49,17 @@ interface ThemeConfig {
 }
 
 const THEMES: Record<HologramTheme, ThemeConfig> = {
-  'jarvis-classic': {
-    name: 'J.A.R.V.I.S. CLASSIC',
-    subtitle: 'M A R K  I V  -  A R C  R E A C T O R  H U D',
+  // Display name for this one is computed at render time from the `assistantName` prop (see
+  // below) rather than fixed here — this is the assistant's own default persona skin, not a
+  // reference to some other character, so it should say whatever the assistant is actually
+  // named. This entry's `name` is just the fallback for when no assistantName prop is passed.
+  'classic': {
+    name: 'XCODER AI CLASSIC',
+    subtitle: 'S I G N A L   C O R E   H U D',
     primaryColor: '#00f3ff',
     secondaryColor: '#00a8ff',
     accentColor: '#ffffff',
-    glowId: 'glow-jarvis-classic',
+    glowId: 'glow-classic',
     fontFamily: '"Share Tech Mono", monospace',
     bgGradient: 'radial-gradient(circle, rgba(0,243,255,0.18) 0%, rgba(0,168,255,0.05) 70%, transparent 100%)',
   },
@@ -62,13 +73,13 @@ const THEMES: Record<HologramTheme, ThemeConfig> = {
     fontFamily: '"Orbitron", "Cinzel", sans-serif',
     bgGradient: 'radial-gradient(circle, rgba(230,0,0,0.15) 0%, rgba(0,85,255,0.05) 70%, transparent 100%)',
   },
-  'jarvis-danger': {
-    name: 'MARK XLV - THREAT RED',
+  'danger-red': {
+    name: 'THREAT RED PROTOCOL',
     subtitle: 'D A N G E R   O V E R R I D E   A C T I V E',
     primaryColor: '#ff2a00',
     secondaryColor: '#ff9900',
     accentColor: '#ffe600',
-    glowId: 'glow-jarvis-danger',
+    glowId: 'glow-danger-red',
     fontFamily: '"Share Tech Mono", monospace',
     bgGradient: 'radial-gradient(circle, rgba(255,42,0,0.2) 0%, rgba(255,153,0,0.05) 70%, transparent 100%)',
   },
@@ -106,11 +117,12 @@ const THEMES: Record<HologramTheme, ThemeConfig> = {
 
 export function Hologram({
   size = 500,
-  theme = 'jarvis-classic',
+  theme = 'classic',
   status = 'ONLINE',
   thinking = false,
   responseText = '',
   onThemeChange,
+  assistantName = 'Xcoder AI',
   showThemeSelector = true,
   showReadout = false,
   bleed = 0,
@@ -120,6 +132,11 @@ export function Hologram({
   const timerRef = useRef<number | null>(null);
 
   const active = THEMES[currentTheme];
+  // Only the "classic" theme's name is dynamic — it's the assistant's own default persona, so
+  // it should say whatever the assistant is actually named (see the assistantName prop's doc
+  // comment above); every other theme is deliberately a different, fixed character/franchise
+  // skin the user opted into, which this doesn't touch.
+  const displayName = currentTheme === 'classic' ? `${assistantName.toUpperCase()} CLASSIC` : active.name;
 
   useEffect(() => {
     setCurrentTheme(theme);
@@ -241,7 +258,7 @@ export function Hologram({
               </feMerge>
             </filter>
 
-            <filter id="jarvis-intense-glow" x="-50%" y="-50%" width="200%" height="200%">
+            <filter id="intense-glow" x="-50%" y="-50%" width="200%" height="200%">
               <feGaussianBlur stdDeviation="8" result="coloredBlur" />
               <feMerge>
                 <feMergeNode in="coloredBlur" />
@@ -271,9 +288,9 @@ export function Hologram({
           <rect x="0" y="0" width="500" height="500" fill="url(#scanlines)" opacity="0.6" />
 
           {/* ========================================================================= */}
-          {/* 1. JARVIS CLASSIC THEME (Original Blueprint Emblem)                      */}
+          {/* 1. CLASSIC THEME (Original Blueprint Emblem)                              */}
           {/* ========================================================================= */}
-          {currentTheme === 'jarvis-classic' && (
+          {currentTheme === 'classic' && (
             <g filter={`url(#${active.glowId})`}>
               {/* Outer Calibration Ring */}
               <g className="spin-cw">
@@ -301,7 +318,7 @@ export function Hologram({
               </g>
 
               {/* Core Node */}
-              <g filter="url(#jarvis-intense-glow)">
+              <g filter="url(#intense-glow)">
                 <circle cx="250" cy="250" r="125" fill="none" stroke={active.primaryColor} strokeWidth="1" strokeOpacity="0.8" strokeDasharray="6 6" />
                 <circle cx="250" cy="250" r="95" fill={active.primaryColor} fillOpacity="0.08" stroke={active.primaryColor} strokeWidth="2" />
 
@@ -347,9 +364,9 @@ export function Hologram({
           )}
 
           {/* ========================================================================= */}
-          {/* 3. JARVIS DANGER THREAT RED THEME                                         */}
+          {/* 3. DANGER RED THREAT THEME                                                */}
           {/* ========================================================================= */}
-          {currentTheme === 'jarvis-danger' && (
+          {currentTheme === 'danger-red' && (
             <g filter={`url(#${active.glowId})`}>
               <g className="spin-cw">
                 <circle cx="250" cy="250" r="235" fill="none" stroke={active.primaryColor} strokeWidth="3" strokeDasharray="30 15 90 15" />
@@ -366,7 +383,7 @@ export function Hologram({
                 <circle cx="250" cy="250" r="120" fill="rgba(255,42,0,0.1)" stroke={active.primaryColor} strokeWidth="3" />
                 <polygon points="250,160 328,295 172,295" fill="none" stroke={active.secondaryColor} strokeWidth="3" />
                 <polygon points="250,340 172,205 328,205" fill="none" stroke={active.secondaryColor} strokeWidth="3" />
-                <circle cx="250" cy="250" r="45" fill={active.primaryColor} filter="url(#jarvis-intense-glow)" />
+                <circle cx="250" cy="250" r="45" fill={active.primaryColor} filter="url(#intense-glow)" />
               </g>
             </g>
           )}
@@ -438,7 +455,7 @@ export function Hologram({
               </g>
               <g className="pulse">
                 <ellipse cx="250" cy="250" rx="65" ry="35" fill="rgba(0,255,170,0.1)" stroke={active.primaryColor} strokeWidth="2" />
-                <ellipse cx="250" cy="250" rx="20" ry="35" fill={active.accentColor} filter="url(#jarvis-intense-glow)" />
+                <ellipse cx="250" cy="250" rx="20" ry="35" fill={active.accentColor} filter="url(#intense-glow)" />
                 <line x1="250" y1="200" x2="250" y2="300" stroke={active.secondaryColor} strokeWidth="1" />
               </g>
             </g>
@@ -450,7 +467,7 @@ export function Hologram({
           why it no longer echoes the assistant's reply. */}
       <div style={{ marginTop: '4px', width: '100%', textAlign: 'center', zIndex: 10, position: 'relative' }}>
         <div style={{ fontSize: '14px', fontWeight: 'bold', letterSpacing: '3px', color: active.secondaryColor, textTransform: 'uppercase', marginBottom: '4px', textShadow: `0 0 8px ${active.secondaryColor}` }}>
-          {active.name} &bull; {status}
+          {displayName} &bull; {status}
         </div>
         <div style={{ fontSize: '10px', letterSpacing: '2px', color: active.accentColor, opacity: 0.8 }}>
           {active.subtitle}
@@ -467,5 +484,8 @@ export function Hologram({
 }
 
 // Backward-compatible alias exports
-export const JarvisEmblem = Hologram;
+// Kept as an alias for anything that imported the old name before this file's theme keys were
+// renamed away from their Jarvis-branded originals (see HologramTheme/THEMES above) — nothing
+// in this codebase currently uses it.
+export const AssistantEmblem = Hologram;
 export default Hologram;

@@ -24,9 +24,13 @@ interface TokenEntry {
   expiresAt: number;
 }
 
-/** How long an issued token remains valid. Override with XCODER_TOKEN_TTL_MS for a shorter
- *  window in higher-security deployments. Default: 7 days. */
-export const TOKEN_TTL_MS = Number(process.env.XCODER_TOKEN_TTL_MS) > 0 ? Number(process.env.XCODER_TOKEN_TTL_MS) : 7 * 24 * 60 * 60 * 1000;
+/** How long an issued token remains valid. Override with XCODER_TOKEN_TTL_MS for a different
+ *  window (e.g. a longer one for a low-risk internal deployment). Default: 60 minutes —
+ *  previously defaulted to 7 days, which is a wide blast radius for a leaked token (a logged
+ *  request, an XSS bug in a future UI change, a compromised client device) to remain valid.
+ *  A short default forces re-authentication regularly while the env var still allows operators
+ *  to widen (or further narrow) the window for their own deployment. */
+export const TOKEN_TTL_MS = Number(process.env.XCODER_TOKEN_TTL_MS) > 0 ? Number(process.env.XCODER_TOKEN_TTL_MS) : 60 * 60 * 1000;
 
 const tokenStore = new Map<string, TokenEntry>();
 

@@ -16,12 +16,14 @@
     "start": "node dist/cli/index.js",
     "serve": "node dist/cli/index.js --serve",
     "ui": "node dist/cli/index.js --ui",
+    "ui:build": "cd ui && npm install && npm run build",
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "db:init": "node dist/cli/index.js --initialize-db",
     "codegraph:install": "python3 -m venv integrations/codegraph/codegraph/.venv && integrations/codegraph/codegraph/.venv/bin/pip install -r integrations/codegraph/codegraph/requirements.txt -r integrations/codegraph/codegraph-mcp/requirements.txt",
-    "codegraph:ui:build": "cd integrations/codegraph/codegraph-ui && npm install && npm run build -- --base=/codegraph-ui/"
+    "codegraph:ui:build": "cd integrations/codegraph/codegraph-ui && npm install && npm run build -- --base=/codegraph-ui/",
+    "build:standalone": "bash scripts/build-standalone.sh"
   },
   "dependencies": {
     "adm-zip": "^0.5.16",

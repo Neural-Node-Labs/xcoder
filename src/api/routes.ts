@@ -21,6 +21,7 @@ import { hasStoredApiKey, setStoredApiKey, clearStoredApiKey, applyStoredApiKey 
 import { getCodegraphConnection, isCodegraphConnected, setCodegraphConnection } from "./codegraphKeyStore.js";
 import { getStatus as getCodegraphStatus, retryAutoConnectIfNeeded, startBundledCodegraph, stopBundledCodegraph, disconnectCodegraph, getSsoSession } from "./codegraphProcess.js";
 import { runCodegraphTool, findProjectByName } from "../tools/codegraphTool.js";
+import { getMood } from "../tools/moodTool.js";
 import { XCODER_PROXY_COOKIE } from "./codegraphProxy.js";
 import { TOOL_SCHEMAS } from "../tools/toolSchemas.js";
 import { runSecurityTool } from "../tools/securityOpsTool.js";
@@ -460,6 +461,7 @@ export function createRouter(): Router {
         iterations: 0,
         usage: orchestrator.getCumulativeUsage(),
         healthScore: orchestrator.getHealthScore(),
+        mood: getMood(cwd),
       };
       if (plan) data.plan = plan;
       if (sessionId) data.sessionId = sessionId;
@@ -676,7 +678,7 @@ export function createRouter(): Router {
     try {
       const result = await orchestrator.run(session.task);
       const outcome = orchestrator.getLastOutcome();
-      const data: ExecuteResponse = { result, iterations: 0 };
+      const data: ExecuteResponse = { result, iterations: 0, mood: getMood(cwd) };
       if (outcome !== "completed") {
         data.limitation =
           outcome === "iteration_limit" || outcome === "partial_success"

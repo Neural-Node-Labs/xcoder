@@ -60,7 +60,7 @@ export default function AdminPage() {
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6" style={{ color: "#e8ecf4" }}>
+    <div className="flex-1 overflow-y-auto p-6" style={{ color: "var(--text-primary)" }}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <Shield size={16} color="#eab04c" />
@@ -69,7 +69,7 @@ export default function AdminPage() {
         <button
           onClick={() => setShowCreate(true)}
           className="flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5"
-          style={{ background: "#eab04c", color: "#0a0d12" }}
+          style={{ background: "#eab04c", color: "var(--bg-base)" }}
         >
           <Plus size={13} /> New user
         </button>
@@ -81,10 +81,10 @@ export default function AdminPage() {
         </div>
       )}
 
-      <div className="rounded-lg overflow-hidden" style={{ border: "1px solid #262d3a" }}>
+      <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--hairline)" }}>
         <table className="w-full text-xs">
           <thead>
-            <tr style={{ background: "#171c26", color: "#7c8698" }}>
+            <tr style={{ background: "var(--bg-raised)", color: "var(--text-muted)" }}>
               <th className="text-left px-3 py-2 font-medium">Username</th>
               <th className="text-left px-3 py-2 font-medium">Role</th>
               <th className="text-left px-3 py-2 font-medium">Status</th>
@@ -95,19 +95,19 @@ export default function AdminPage() {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={6} className="px-3 py-4 text-center" style={{ color: "#4c5566" }}>Loading...</td></tr>
+              <tr><td colSpan={6} className="px-3 py-4 text-center" style={{ color: "var(--text-faint)" }}>Loading...</td></tr>
             )}
             {!loading && users.map((u) => (
-              <tr key={u.id} style={{ borderTop: "1px solid #262d3a" }}>
-                <td className="px-3 py-2 mono">{u.username}{u.id === me?.id && <span style={{ color: "#4c5566" }}> (you)</span>}</td>
+              <tr key={u.id} style={{ borderTop: "1px solid var(--hairline)" }}>
+                <td className="px-3 py-2 mono">{u.username}{u.id === me?.id && <span style={{ color: "var(--text-faint)" }}> (you)</span>}</td>
                 <td className="px-3 py-2">
                   <button
                     onClick={() => toggleRole(u)}
                     disabled={u.id === me?.id}
                     className="text-[10px] uppercase tracking-wide rounded px-2 py-0.5"
                     style={{
-                      background: u.role === "admin" ? "#3a2a12" : "#171c26",
-                      color: u.role === "admin" ? "#f2b84b" : "#7c8698",
+                      background: u.role === "admin" ? "#3a2a12" : "var(--bg-raised)",
+                      color: u.role === "admin" ? "#f2b84b" : "var(--text-muted)",
                       opacity: u.id === me?.id ? 0.5 : 1,
                     }}
                   >
@@ -130,16 +130,16 @@ export default function AdminPage() {
                 </td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-1.5">
-                    <span className="mono truncate max-w-[140px]" style={{ color: "#4c5566" }}>{u.api_key}</span>
-                    <button onClick={() => copyKey(u)} title="Copy" style={{ color: "#7c8698" }}>
+                    <span className="mono truncate max-w-[140px]" style={{ color: "var(--text-faint)" }}>{u.api_key}</span>
+                    <button onClick={() => copyKey(u)} title="Copy" style={{ color: "var(--text-muted)" }}>
                       {copiedId === u.id ? <Check size={12} color="#43d17a" /> : <Copy size={12} />}
                     </button>
                   </div>
                 </td>
-                <td className="px-3 py-2 mono" style={{ color: "#4c5566" }}>{u.created_at?.split(" ")[0]}</td>
+                <td className="px-3 py-2 mono" style={{ color: "var(--text-faint)" }}>{u.created_at?.split(" ")[0]}</td>
                 <td className="px-3 py-2">
                   <div className="flex items-center gap-2 justify-end">
-                    <button onClick={() => regenerateKey(u)} title="Regenerate API key" style={{ color: "#7c8698" }}>
+                    <button onClick={() => regenerateKey(u)} title="Regenerate API key" style={{ color: "var(--text-muted)" }}>
                       <RotateCcw size={13} />
                     </button>
                     <button
@@ -190,25 +190,25 @@ function CreateUserModal({ onClose, onCreated }) {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: "rgba(10,13,18,0.7)" }} onClick={onClose}>
-      <div className="w-full max-w-sm rounded-lg p-4 flex flex-col gap-3" style={{ background: "#12161e", border: "1px solid #262d3a" }} onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-sm rounded-lg p-4 flex flex-col gap-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--hairline)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold">New user</div>
-          <button onClick={onClose} style={{ color: "#7c8698" }}><X size={16} /></button>
+          <button onClick={onClose} style={{ color: "var(--text-muted)" }}><X size={16} /></button>
         </div>
         <input
           value={username} onChange={(e) => setUsername(e.target.value)} placeholder="username"
-          className="text-xs rounded-md px-2 py-1.5" style={{ background: "#0a0d12", border: "1px solid #262d3a", color: "#e8ecf4" }}
+          className="text-xs rounded-md px-2 py-1.5" style={{ background: "var(--bg-base)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
         />
         <input
           value={password} onChange={(e) => setPassword(e.target.value)} placeholder="password" type="password"
-          className="text-xs rounded-md px-2 py-1.5" style={{ background: "#0a0d12", border: "1px solid #262d3a", color: "#e8ecf4" }}
+          className="text-xs rounded-md px-2 py-1.5" style={{ background: "var(--bg-base)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
         />
         <div className="flex gap-2">
           {["member", "admin"].map((r) => (
             <button
               key={r} onClick={() => setRole(r)}
               className="flex-1 text-xs rounded-md py-1.5"
-              style={{ background: role === r ? "#eab04c" : "#171c26", color: role === r ? "#0a0d12" : "#7c8698" }}
+              style={{ background: role === r ? "#eab04c" : "var(--bg-raised)", color: role === r ? "var(--bg-base)" : "var(--text-muted)" }}
             >
               {r}
             </button>
@@ -218,7 +218,7 @@ function CreateUserModal({ onClose, onCreated }) {
         <button
           onClick={submit} disabled={busy || !username || !password}
           className="text-xs rounded-md px-3 py-2 font-medium"
-          style={{ background: "#eab04c", color: "#0a0d12", opacity: busy || !username || !password ? 0.5 : 1 }}
+          style={{ background: "#eab04c", color: "var(--bg-base)", opacity: busy || !username || !password ? 0.5 : 1 }}
         >
           {busy ? "Creating..." : "Create user"}
         </button>

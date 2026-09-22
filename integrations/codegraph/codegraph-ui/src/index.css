@@ -2,6 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
+/* ─── Theme tokens ───────────────────────────────────────────────────────────────────────
+   Mirrors the "Token system" comment at the top of DependencyGraphExplorer.jsx: the same 7
+   chrome colors (background/panel/raised/hairline/text-primary/muted/faint) are reused via
+   inline style={{...}} across every page in this app. Centralizing them here as CSS variables
+   — and having every one of those inline styles reference var(--bg-base) etc instead of the
+   literal hex — is what makes the [data-theme="light"] override below actually repaint the
+   whole app instead of only the couple of elements that happen to use real Tailwind classes.
+   Driven by src/theme.js, which mirrors whatever theme xcoder's own Settings page has chosen
+   (see xcoder's ui/src/theme.ts for the write side of that handoff).
+   Deliberately NOT themed: the node-type palette (File/Function/Class/etc, see TYPE_COLOR in
+   DependencyGraphExplorer.jsx) and the amber "trace-signal" accent (#eab04c) — those are
+   semantic/status colors meant to stay recognizable regardless of theme, the same way a code
+   editor's syntax colors don't change with light/dark chrome. */
+:root {
+  --bg-base: #0a0d12;
+  --bg-panel: #12161e;
+  --bg-raised: #171c26;
+  --hairline: #262d3a;
+  --text-primary: #e8ecf4;
+  --text-muted: #7c8698;
+  --text-faint: #4c5566;
+}
+
+:root[data-theme="light"] {
+  --bg-base: #f4f7fb;
+  --bg-panel: #ffffff;
+  --bg-raised: #eaeff6;
+  --hairline: #d3dbe6;
+  --text-primary: #0b1622;
+  --text-muted: #4d5c6e;
+  --text-faint: #7c8698;
+}
+
 html, body, #root {
   height: 100%;
   margin: 0;
@@ -9,5 +42,5 @@ html, body, #root {
 }
 
 body {
-  background: #0a0d12;
+  background: var(--bg-base);
 }

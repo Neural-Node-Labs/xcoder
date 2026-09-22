@@ -1,6 +1,11 @@
 // Typed API client for the xcoder backend. Every function returns the unwrapped `data` from
 // the ApiResponse<T> envelope, or throws with the server's `error` message on failure.
 
+// JarvisMood's canonical definition lives in the component, not here — JarvisHologram.tsx is
+// deliberately self-contained/portable to other projects, so it owns this type; this API layer
+// (xcoder-specific) depends on it, not the other way around.
+import type { JarvisMood } from "../components/JarvisHologram";
+
 const BASE = "/api/v1";
 
 export interface ApiResponse<T = unknown> {
@@ -39,20 +44,27 @@ export function setUnauthorizedHandler(fn: (() => void) | null) {
   onUnauthorized = fn;
 }
 
-async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
-  const headers: Record<string, string> = { "Content-Type": "application/json" };
-  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
-
-  const res = await fetch(`${BASE}${path}`, {
-    method,
-    headers,
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
-
+/** Shared by request() and uploadForm(): turns a fetch Response into the unwrapped `data`,
+ *  throwing a useful message either way. Pulled out because both had identical copies of this
+ *  parsing/error logic, which is exactly the kind of thing that quietly drifts apart when only
+ *  one of the two gets updated — as almost happened just adding the 502/503/504 case below. */
+async function unwrapResponse<T>(res: Response): Promise<T> {
   let json: ApiResponse<T>;
   try {
     json = await res.json();
   } catch {
+    // A non-JSON body almost always means something in front of the api process (a reverse
+    // proxy, an ingress, a corporate load balancer) intercepted the request and returned its
+    // own plain-HTML error page — the api process itself always returns JSON, even for its own
+    // errors (see routes.ts's error handler). 502/503/504 specifically are the "something
+    // upstream gave up" family, most commonly a proxy's read-timeout firing on a long-running
+    // /chat or /chat/execute call (an agentic run can easily take longer than a proxy's default
+    // ~60s) — worth naming explicitly rather than leaving it as an opaque parse failure.
+    if (res.status === 502 || res.status === 503 || res.status === 504) {
+      throw new Error(
+        `The server didn't respond in time (HTTP ${res.status}). This usually means a reverse proxy in front of xcoder gave up waiting on a long-running request (a big task or a slow model can take a while) — the task may still be running server-side. Try again, or check that proxy's read-timeout if this keeps happening.`
+      );
+    }
     throw new Error(`Server returned a non-JSON response (HTTP ${res.status})`);
   }
 
@@ -65,6 +77,19 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     throw new Error(json.error || `Request failed (HTTP ${res.status})`);
   }
   return json.data as T;
+}
+
+async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
+  const headers: Record<string, string> = { "Content-Type": "application/json" };
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+
+  const res = await fetch(`${BASE}${path}`, {
+    method,
+    headers,
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+
+  return unwrapResponse<T>(res);
 }
 
 const get = <T>(path: string) => request<T>("GET", path);
@@ -82,20 +107,7 @@ async function uploadForm<T>(path: string, form: FormData): Promise<T> {
   // server would fail to parse the body at all.
 
   const res = await fetch(`${BASE}${path}`, { method: "POST", headers, body: form });
-
-  let json: ApiResponse<T>;
-  try {
-    json = await res.json();
-  } catch {
-    throw new Error(`Server returned a non-JSON response (HTTP ${res.status})`);
-  }
-  if (!res.ok || !json.success) {
-    if (res.status === 401 || (res.status === 403 && AUTH_INVALID_MESSAGES.has(json.error ?? ""))) {
-      onUnauthorized?.();
-    }
-    throw new Error(json.error || `Request failed (HTTP ${res.status})`);
-  }
-  return json.data as T;
+  return unwrapResponse<T>(res);
 }
 
 // ─── Types (mirrors src/api/types.ts) ──────────────────────────────────────────────
@@ -183,6 +195,8 @@ export interface ChatResponse {
   continueRequested?: boolean;
   iterationMaxReached?: boolean;
   partialSuccess?: PartialSuccess;
+  /** See ExecuteResponse.mood below — same field, same set_mood_tool backing it. */
+  mood?: JarvisMood;
 }
 
 export interface ExecuteResponse {
@@ -192,6 +206,12 @@ export interface ExecuteResponse {
   continueRequested?: boolean;
   iterationMaxReached?: boolean;
   partialSuccess?: PartialSuccess;
+  /** The assistant's current mood for this workspace, as last set (at any point, possibly in
+   *  an earlier chat) via set_mood_tool — see src/tools/moodTool.ts server-side. Render with
+   *  <JarvisHologram mood={...} /> (components/JarvisHologram.tsx). Always present once any
+   *  run has completed for a workspace — a workspace with no mood ever set explicitly gets a
+   *  random one on first read rather than a fixed default. */
+  mood?: JarvisMood;
 }
 
 export interface SkillListEntry {

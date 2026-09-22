@@ -73,6 +73,12 @@ export interface ChatResponse {
   /** When true, the run stopped because the iteration limit was reached. The UI should
    *  highlight the limitation message in red to distinguish it from other limitation types. */
   iterationMaxReached?: boolean;
+  /** The assistant's current mood, as last set via set_mood_tool during this run (or any
+   *  earlier run in the same workspace — it persists until the tool is called again; see
+   *  moodTool.ts). The UI renders this with <JarvisHologram mood={...} /> (ChatPanel.tsx).
+   *  Always present — a workspace that has never had a mood explicitly set gets a random one
+   *  the first time this is read, rather than a fixed default (see moodTool.ts's getMood()). */
+  mood?: import("../tools/moodTool.js").JarvisMood;
   /**
    * When present, a subagent hit its iteration limit and the preserved context is included
    * so the UI can re-send it with continueOnLimit: true to resume the subagent without
@@ -149,6 +155,8 @@ export interface ExecuteResponse {
   limitation?: string;
   continueRequested?: boolean;
   iterationMaxReached?: boolean;
+  /** See ChatResponse.mood — same field, same set_mood_tool/moodTool.ts backing it. */
+  mood?: import("../tools/moodTool.js").JarvisMood;
   /**
    * When present, the orchestrator hit the iteration limit and captured partial-success
    * context — what was accomplished before stopping. Contains the last N tool calls,

@@ -164,7 +164,7 @@ Once issued, a Bearer token was valid forever, with no server-side way to force 
 only an explicit logout (`revokeToken`) removed it. A token leaked once (a logged request, a
 compromised device, a future XSS bug in the dashboard) stayed valid indefinitely.
 
-**Fix**: tokens now carry `expiresAt` (default 7-day TTL, `XCODER_TOKEN_TTL_MS` to override),
+**Fix**: tokens now carry `expiresAt` (default 60-minute TTL, `XCODER_TOKEN_TTL_MS` to override),
 enforced in `validateToken()` and `authMiddleware`, with both lazy eviction on access and a
 periodic sweep. **Verified**: 3 tests in `auth.test.ts` confirm a fresh token validates, an
 expired token is rejected by both `validateToken` and `authMiddleware` directly (403, not

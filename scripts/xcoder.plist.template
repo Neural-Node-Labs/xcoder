@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- launchd plist template for running xcoder as a background service on macOS without Docker.
+     install.sh fills in the placeholders below and writes the result to
+     ~/Library/LaunchAgents/com.xcoder.daemon.plist (user-level; runs while that user is logged
+     in — that's intentional, since it also needs that user's normal login environment/PATH
+     for git, python3, etc.). To hand-install instead: copy this file, replace the placeholders,
+     drop it in ~/Library/LaunchAgents/, then
+     `launchctl load -w ~/Library/LaunchAgents/com.xcoder.daemon.plist`. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.xcoder.daemon</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>__NODE_PATH__</string>
+    <string>__INSTALL_DIR__/dist/cli/index.js</string>
+    <string>__EXEC_MODE__</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>__INSTALL_DIR__</string>
+
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <dict>
+    <key>SuccessfulExit</key>
+    <false/>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>__INSTALL_DIR__/logs/xcoder.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>__INSTALL_DIR__/logs/xcoder.err.log</string>
+</dict>
+</plist>

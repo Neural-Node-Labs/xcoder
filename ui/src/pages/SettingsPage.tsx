@@ -1,5 +1,10 @@
 import { useState, useEffect } from "react";
 import { api, HealthResponse, EnginesResponse, LlmConfigSummary, LlmProviderDefault } from "../api/client";
+import { THEMES, applyTheme, getStoredTheme } from "../theme";
+import { JarvisHologram, JarvisMood } from "../components/JarvisHologram";
+import { DEFAULT_ASSISTANT_NAME, getAssistantName, setAssistantName } from "../assistantName";
+
+const JARVIS_MOODS: JarvisMood[] = ["ready", "happy", "sad", "alert", "attack", "danger"];
 
 export function SettingsPage() {
   const [hasKey, setHasKey] = useState<boolean | null>(null);
@@ -8,6 +13,10 @@ export function SettingsPage() {
   const [message, setMessage] = useState<string | null>(null);
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [engines, setEngines] = useState<EnginesResponse | null>(null);
+  const [theme, setTheme] = useState<string>(() => getStoredTheme());
+  const [jarvisMood, setJarvisMood] = useState<JarvisMood>("ready");
+  const [assistantNameInput, setAssistantNameInput] = useState<string>(() => getAssistantName());
+  const [assistantNameSaved, setAssistantNameSaved] = useState(false);
 
   const [llmConfig, setLlmConfig] = useState<LlmConfigSummary | null>(null);
   const [providers, setProviders] = useState<string[]>([]);
@@ -195,6 +204,124 @@ export function SettingsPage() {
             {busy ? <span className="spinner" /> : "Save key"}
           </button>
         </form>
+      </div>
+
+      <div className="card" style={{ gridColumn: "1 / -1" }}>
+        <div className="card-title">Assistant name</div>
+        <p className="text-2" style={{ marginTop: 0, marginBottom: 16, fontSize: 12 }}>
+          Shown in the chat placeholder and the hologram avatar's label. Defaults to "
+          {DEFAULT_ASSISTANT_NAME}" — this used to be hardcoded as "JARVIS" in a couple of
+          places, which is a trademarked fictional AI name this project has no rights to, so it's
+          configurable now instead. Persists on this browser only.
+        </p>
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <input
+            type="text"
+            value={assistantNameInput}
+            onChange={(e) => {
+              setAssistantNameInput(e.target.value);
+              setAssistantNameSaved(false);
+            }}
+            placeholder={DEFAULT_ASSISTANT_NAME}
+            style={{ maxWidth: 260 }}
+          />
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => {
+              setAssistantName(assistantNameInput);
+              setAssistantNameInput(getAssistantName());
+              setAssistantNameSaved(true);
+            }}
+          >
+            Save
+          </button>
+          {assistantNameInput.trim() !== DEFAULT_ASSISTANT_NAME && (
+            <button
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                setAssistantName(DEFAULT_ASSISTANT_NAME);
+                setAssistantNameInput(DEFAULT_ASSISTANT_NAME);
+                setAssistantNameSaved(true);
+              }}
+            >
+              Reset to default
+            </button>
+          )}
+          {assistantNameSaved && <span className="text-2" style={{ fontSize: 12 }}>Saved ✓</span>}
+        </div>
+      </div>
+
+      <div className="card" style={{ gridColumn: "1 / -1" }}>
+        <div className="card-title">Theme</div>
+        <p className="text-2" style={{ marginTop: 0, marginBottom: 16, fontSize: 12 }}>
+          Applies immediately and persists across reloads — for you, on this browser. Also
+          reflected in the embedded CodeGraph Explorer.
+        </p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+          {THEMES.map((t) => (
+            <button
+              key={t.id}
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                applyTheme(t.id);
+                setTheme(t.id);
+              }}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: 4,
+                minWidth: 180,
+                padding: "10px 14px",
+                border: theme === t.id ? "1px solid var(--border-hover)" : "1px solid var(--border)",
+                background: theme === t.id ? "var(--accent-dim)" : "var(--glass-1)",
+              }}
+            >
+              <span style={{ fontWeight: 600, fontSize: 13 }}>
+                {t.label}
+                {theme === t.id ? " ✓" : ""}
+              </span>
+              <span className="text-2" style={{ fontSize: 11, textAlign: "left" }}>
+                {t.description}
+              </span>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="card" style={{ gridColumn: "1 / -1" }}>
+        <div className="card-title">Assistant hologram</div>
+        <p className="text-2" style={{ marginTop: 0, marginBottom: 16, fontSize: 12 }}>
+          A standalone, mood-reactive HUD avatar (<code>ui/src/components/JarvisHologram.tsx</code>)
+          — pure React + CSS, no dependency on this app's theme, so it drops into any other
+          project unchanged. Not wired to anything live here yet; this is just a preview of every
+          mood so you can see the animation before reusing it elsewhere.
+        </p>
+        <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
+          <JarvisHologram mood={jarvisMood} size={160} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 140 }}>
+            {JARVIS_MOODS.map((m) => (
+              <button
+                key={m}
+                type="button"
+                className="btn btn-sm"
+                onClick={() => setJarvisMood(m)}
+                style={{
+                  textAlign: "left",
+                  textTransform: "capitalize",
+                  border: jarvisMood === m ? "1px solid var(--border-hover)" : "1px solid var(--border)",
+                  background: jarvisMood === m ? "var(--accent-dim)" : "var(--glass-1)",
+                }}
+              >
+                {m}
+                {jarvisMood === m ? " ✓" : ""}
+              </button>
+            ))}
+          </div>
+        </div>
       </div>
 
       <div className="card" style={{ gridColumn: "1 / -1" }}>

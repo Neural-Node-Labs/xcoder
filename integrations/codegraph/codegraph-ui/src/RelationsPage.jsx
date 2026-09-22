@@ -56,7 +56,7 @@ export default function RelationsPage({ projectId, onInspectNode }) {
 
   if (!projectId) {
     return (
-      <div className="flex-1 flex items-center justify-center text-xs" style={{ color: "#4c5566" }}>
+      <div className="flex-1 flex items-center justify-center text-xs" style={{ color: "var(--text-faint)" }}>
         Select a project to view its relations.
       </div>
     );
@@ -64,7 +64,7 @@ export default function RelationsPage({ projectId, onInspectNode }) {
 
   const NodeCell = ({ id, name, type, file }) => {
     if (id == null) {
-      return <span className="text-[11px] mono flex items-center gap-1" style={{ color: "#4c5566" }}><AlertCircle size={11} /> unresolved</span>;
+      return <span className="text-[11px] mono flex items-center gap-1" style={{ color: "var(--text-faint)" }}><AlertCircle size={11} /> unresolved</span>;
     }
     return (
       <button
@@ -72,22 +72,22 @@ export default function RelationsPage({ projectId, onInspectNode }) {
         className="text-left"
         title={file || ""}
       >
-        <span className="mono text-[11px]" style={{ color: TYPE_COLOR[type] || "#e8ecf4" }}>{name}</span>
+        <span className="mono text-[11px]" style={{ color: TYPE_COLOR[type] || "var(--text-primary)" }}>{name}</span>
       </button>
     );
   };
 
   return (
-    <div className="flex-1 overflow-y-auto p-6" style={{ color: "#e8ecf4" }}>
+    <div className="flex-1 overflow-y-auto p-6" style={{ color: "var(--text-primary)" }}>
       <div className="flex items-center gap-2 mb-4 flex-wrap">
         <div className="relative">
-          <Search size={13} color="#4c5566" className="absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <Search size={13} color="var(--text-faint)" className="absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="search source/target/expression..."
             className="text-xs mono rounded-md pl-7 pr-2 py-1.5 w-64"
-            style={{ background: "#12161e", border: "1px solid #262d3a", color: "#e8ecf4" }}
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
           />
         </div>
 
@@ -95,7 +95,7 @@ export default function RelationsPage({ projectId, onInspectNode }) {
           value={typeFilter}
           onChange={(e) => setTypeFilter(e.target.value)}
           className="text-xs rounded-md px-2 py-1.5"
-          style={{ background: "#12161e", border: "1px solid #262d3a", color: "#e8ecf4" }}
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
         >
           <option value="">All relation types</option>
           {EDGE_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
@@ -105,24 +105,24 @@ export default function RelationsPage({ projectId, onInspectNode }) {
           value={resolvedFilter}
           onChange={(e) => setResolvedFilter(e.target.value)}
           className="text-xs rounded-md px-2 py-1.5"
-          style={{ background: "#12161e", border: "1px solid #262d3a", color: "#e8ecf4" }}
+          style={{ background: "var(--bg-panel)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
         >
           <option value="">Resolved + unresolved</option>
           <option value="true">Resolved only</option>
           <option value="false">Unresolved only</option>
         </select>
 
-        <span className="text-[11px] mono ml-auto" style={{ color: "#7c8698" }}>{total} relations</span>
+        <span className="text-[11px] mono ml-auto" style={{ color: "var(--text-muted)" }}>{total} relations</span>
       </div>
 
       {error && (
         <div className="text-xs mb-3 px-3 py-2 rounded-md" style={{ background: "#2a1620", color: "#ef5da8" }}>{error}</div>
       )}
 
-      <div className="rounded-lg overflow-hidden" style={{ border: "1px solid #262d3a" }}>
+      <div className="rounded-lg overflow-hidden" style={{ border: "1px solid var(--hairline)" }}>
         <table className="w-full text-xs">
           <thead>
-            <tr style={{ background: "#171c26", color: "#7c8698" }}>
+            <tr style={{ background: "var(--bg-raised)", color: "var(--text-muted)" }}>
               <th className="text-left px-3 py-2 font-medium">Source</th>
               <th className="text-left px-3 py-2 font-medium">Relation</th>
               <th className="text-left px-3 py-2 font-medium">Target</th>
@@ -131,20 +131,20 @@ export default function RelationsPage({ projectId, onInspectNode }) {
           </thead>
           <tbody>
             {loading && (
-              <tr><td colSpan={4} className="px-3 py-6 text-center" style={{ color: "#4c5566" }}>Loading...</td></tr>
+              <tr><td colSpan={4} className="px-3 py-6 text-center" style={{ color: "var(--text-faint)" }}>Loading...</td></tr>
             )}
             {!loading && rows.length === 0 && (
-              <tr><td colSpan={4} className="px-3 py-6 text-center" style={{ color: "#4c5566" }}>No relations match these filters.</td></tr>
+              <tr><td colSpan={4} className="px-3 py-6 text-center" style={{ color: "var(--text-faint)" }}>No relations match these filters.</td></tr>
             )}
             {!loading && rows.map((r) => (
-              <tr key={r.id} style={{ borderTop: "1px solid #262d3a" }}>
+              <tr key={r.id} style={{ borderTop: "1px solid var(--hairline)" }}>
                 <td className="px-3 py-2">
                   <NodeCell id={r.source_id} name={r.source_name} type={r.source_type} file={r.source_file} />
                 </td>
                 <td className="px-3 py-2">
                   <span
                     className="text-[10px] uppercase tracking-wide rounded px-1.5 py-0.5"
-                    style={{ background: r.resolved ? "#171c26" : "#2a1620", color: r.resolved ? "#7c8698" : "#ef5da8" }}
+                    style={{ background: r.resolved ? "var(--bg-raised)" : "#2a1620", color: r.resolved ? "var(--text-muted)" : "#ef5da8" }}
                   >
                     {r.type}
                   </span>
@@ -152,7 +152,7 @@ export default function RelationsPage({ projectId, onInspectNode }) {
                 <td className="px-3 py-2">
                   <NodeCell id={r.target_id} name={r.target_name} type={r.target_type} file={r.target_file} />
                 </td>
-                <td className="px-3 py-2 mono truncate max-w-[220px]" style={{ color: "#4c5566" }} title={r.raw_expression || ""}>
+                <td className="px-3 py-2 mono truncate max-w-[220px]" style={{ color: "var(--text-faint)" }} title={r.raw_expression || ""}>
                   {r.raw_expression || "—"}
                 </td>
               </tr>
@@ -166,18 +166,18 @@ export default function RelationsPage({ projectId, onInspectNode }) {
           onClick={() => setPage((p) => Math.max(0, p - 1))}
           disabled={page === 0}
           className="flex items-center gap-1 text-xs rounded-md px-2 py-1"
-          style={{ background: "#171c26", border: "1px solid #262d3a", color: "#e8ecf4", opacity: page === 0 ? 0.4 : 1 }}
+          style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)", color: "var(--text-primary)", opacity: page === 0 ? 0.4 : 1 }}
         >
           <ChevronLeft size={13} /> Prev
         </button>
-        <span className="text-[11px] mono" style={{ color: "#4c5566" }}>
+        <span className="text-[11px] mono" style={{ color: "var(--text-faint)" }}>
           Page {page + 1} of {Math.max(1, Math.ceil(total / PAGE_SIZE))}
         </span>
         <button
           onClick={() => setPage((p) => ((p + 1) * PAGE_SIZE < total ? p + 1 : p))}
           disabled={(page + 1) * PAGE_SIZE >= total}
           className="flex items-center gap-1 text-xs rounded-md px-2 py-1"
-          style={{ background: "#171c26", border: "1px solid #262d3a", color: "#e8ecf4", opacity: (page + 1) * PAGE_SIZE >= total ? 0.4 : 1 }}
+          style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)", color: "var(--text-primary)", opacity: (page + 1) * PAGE_SIZE >= total ? 0.4 : 1 }}
         >
           Next <ChevronRight size={13} />
         </button>

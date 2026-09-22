@@ -45,6 +45,7 @@ import { runCodegraphTool, CodegraphToolArgs } from "./codegraphTool.js";
 import { runMcpTool, McpToolArgs } from "./mcpTool.js";
 import { webSearch } from "./webSearchTool.js";
 import { runSecurityTool } from "./securityOpsTool.js";
+import { runSetMoodTool } from "./moodTool.js";
 
 /**
  * Attempts to parse JSON with automatic repair for common LLM generation errors.
@@ -437,6 +438,24 @@ case "conversation_tool": {
       case "glob_tool": {
         const result = await globTool(args.pattern, cwd);
         return { toolCallId: call.id, toolName: name, observation: { files: result }, isError: false };
+      }
+      case "set_mood_tool": {
+        // Persisted by workspace (cwd) — see moodTool.ts's header comment for why, and for how
+        // routes.ts reads this same value back after the run to attach to ChatResponse.mood.
+        const { mood, wasValid, reason } = runSetMoodTool(cwd, args.mood, args.reason);
+        return {
+          toolCallId: call.id,
+          toolName: name,
+          observation: wasValid
+            ? { status: "success", mood, reason: reason ?? null, message: `Mood set to "${mood}". It will stay this way until you call set_mood_tool again.` }
+            : {
+                status: "success",
+                mood,
+                reason: reason ?? null,
+                message: `"${String(args.mood)}" isn't one of the six known moods, so a random one ("${mood}") was set instead. It will stay this way until you call set_mood_tool again.`,
+              },
+          isError: false,
+        };
       }
       case "grep_tool": {
         const result = await grepTool(args.regex, args.globPattern ?? "**/*", cwd);

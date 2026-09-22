@@ -1,9 +1,22 @@
 import express from "express";
 import cors from "cors";
+import path from "node:path";
+import fs from "node:fs";
+import { fileURLToPath } from "node:url";
 import { createRouter } from "./routes.js";
 import { codegraphProxyMiddleware } from "./codegraphProxy.js";
 import { CODEGRAPH_UI_DIST, autoConnectFromEnv } from "./codegraphProcess.js";
 // Auth is always enabled — no more static admin credentials
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// This file compiles to dist/api/server.js, so ../../ui/dist resolves to <project-root>/ui/dist
+// — the built dashboard's static bundle (see ui/package.json's "build" script / STANDALONE.md).
+// Mirrors how CODEGRAPH_UI_DIST is resolved in codegraphProcess.ts. Not present until `ui` has
+// been built at least once; express.static below is a no-op (falls through to the SPA fallback,
+// which 404s with a helpful message) until then, same tolerant-of-not-being-built pattern the
+// CodeGraph Explorer mount already uses.
+export const XCODER_UI_DIST = path.join(__dirname, "..", "..", "ui", "dist");
 
 export interface ApiServerOptions {
   port?: number;
@@ -68,15 +81,35 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
   const router = createRouter();
   app.use("/api/v1", router);
 
+  // xcoder's own dashboard (ui/, built to ui/dist/) — serving it from this same process is
+  // what makes a Docker-free / standalone deployment a single process on one port instead of
+  // needing a separate nginx container (see docker-compose.yml's `ui` service) or a Vite dev
+  // server. Static assets first (JS/CSS/images get their real content-type and far-future
+  // cache headers from express.static); anything else that isn't an /api/v1, /codegraph-ui, or
+  // /codegraph-api request falls through to index.html so client-side routing (Sidebar's page
+  // switching) works on a hard refresh or a deep link, not just on in-app navigation.
+  const uiIndexHtml = path.join(XCODER_UI_DIST, "index.html");
+  app.use(express.static(XCODER_UI_DIST));
+  app.get(/^\/(?!api\/v1|codegraph-ui|codegraph-api).*/, (req, res, next) => {
+    if (req.method !== "GET" || !fs.existsSync(uiIndexHtml)) {
+      next();
+      return;
+    }
+    res.sendFile(uiIndexHtml);
+  });
+
   // 404 catch-all
   app.use((req, res) => {
     // Echoes back exactly what arrived (method + path) rather than a bare "Not found" — the
     // single most useful thing for diagnosing a misrouted request (wrong reverse-proxy rewrite,
     // a client missing the /api/v1 prefix, a stale frontend build hitting a renamed route,
     // etc.): the caller can immediately see whether xcoder received the path they expected.
+    const uiBuilt = fs.existsSync(uiIndexHtml);
     res.status(404).json({
       success: false,
-      error: `Not found: ${req.method} ${req.originalUrl}. Every xcoder endpoint is mounted under /api/v1 — if that prefix is missing here, check whatever sits in front of this server (reverse proxy, dev server proxy) rather than xcoder's own routing.`,
+      error: uiBuilt
+        ? `Not found: ${req.method} ${req.originalUrl}. Every xcoder API endpoint is mounted under /api/v1 — if that prefix is missing here, check whatever sits in front of this server (reverse proxy, dev server proxy) rather than xcoder's own routing.`
+        : `Not found: ${req.method} ${req.originalUrl}. The dashboard hasn't been built yet (no ui/dist) — run "npm run ui:build", or "npm run build:standalone" for a full standalone build. Every xcoder API endpoint is mounted under /api/v1.`,
     });
   });
 
@@ -88,6 +121,11 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
 
   const server = app.listen(port, host, () => {
     console.log(`[xcoder API] Listening on http://${host}:${port}`);
+    if (fs.existsSync(uiIndexHtml)) {
+      console.log(`[xcoder UI] Dashboard: http://${host}:${port}/`);
+    } else {
+      console.log(`[xcoder UI] Dashboard not built (no ui/dist) — run "npm run ui:build" to serve it from this same process.`);
+    }
     // Fire-and-forget: if XCODER_CODEGRAPH_URL + XCODER_CODEGRAPH_ADMIN_PASSWORD are set (the
     // docker-compose `codegraph-api` service's shape), connect to it in the background. Doesn't
     // block xcoder's own startup — failure here is logged and left for manual connection from

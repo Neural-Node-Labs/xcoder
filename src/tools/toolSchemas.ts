@@ -69,6 +69,29 @@ export const TOOL_SCHEMAS: ToolSchema[] = [
   {
     type: "function",
     function: {
+      name: "set_mood_tool",
+      description:
+        "Sets your own visible mood indicator, shown to the user as an animated hologram avatar next to the chat. Call this whenever the situation clearly calls for a particular mood: the user reports a critical failure, security breach, or something urgent and dangerous -> 'danger'; you are actively running an offensive/red-team security tool -> 'attack'; something is off or needs caution but isn't critical -> 'alert'; a task just completed successfully or the news is good -> 'happy'; a task failed or the situation is discouraging -> 'sad'; nothing notable either way, everything nominal -> 'ready'. The mood you set PERSISTS across the whole workspace until you call this tool again — it does not reset on its own, so call it again once the situation changes (e.g. call it with 'ready' once an 'attack'-worthy scan finishes). If you genuinely cannot tell which of the six fits, still call this tool and pick one at random rather than skipping it — a random guess is better for the user's experience than the mood never updating at all.",
+      parameters: {
+        type: "object",
+        properties: {
+          mood: {
+            type: "string",
+            enum: ["happy", "sad", "alert", "ready", "attack", "danger"],
+            description: "The mood to display. Pick the single best fit, or a random one if genuinely unsure.",
+          },
+          reason: {
+            type: "string",
+            description: "One short sentence: why this mood fits the current situation.",
+          },
+        },
+        required: ["mood"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "grep_tool",
       description: "Search file contents by regex across the workspace, respecting ignore rules.",
       parameters: {

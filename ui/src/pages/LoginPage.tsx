@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useAuth } from "../context/AuthContext";
 import { api } from "../api/client";
+import { XcoderLogo } from "../components/XcoderLogo";
 
 // Minimal shape of the pieces of Google Identity Services (GIS) this page uses. GIS attaches
 // itself to `window.google` once its script tag has loaded — there's no npm package for it,
@@ -115,7 +116,9 @@ export function LoginPage() {
     <div className="login-screen">
       <div className="login-card">
         <div className="row" style={{ marginBottom: 20 }}>
-          <div className="brand-mark">⌗</div>
+          <div className="brand-mark">
+            <XcoderLogo size={30} />
+          </div>
           <div>
             <div className="brand-text">xcoder</div>
             <div className="brand-sub">SDLC Orchestration Platform</div>

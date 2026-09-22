@@ -7,9 +7,9 @@ import {
 } from "lucide-react";
 
 /* ---------------------------------------------------------------------
-   Token system
-   bg-base #0a0d12 · bg-panel #12161e · bg-raised #171c26 · hairline #262d3a
-   text-primary #e8ecf4 · text-muted #7c8698 · text-faint #4c5566
+   Token system (now CSS variables — see codegraph-ui/src/index.css and theme.js)
+   --bg-base · --bg-panel · --bg-raised · --hairline
+   --text-primary · --text-muted · --text-faint
    accent/trace-signal #eab04c
    Node-type palette:
      File #5b9dff  Function #43d17a  Class #f2b84b  ConfigKey #ef5da8
@@ -34,7 +34,7 @@ const TYPE_ICON = {
   Component: ComponentIcon,
   ApiCall: ArrowLeftRight,
 };
-const FALLBACK_COLOR = "#7c8698";
+const FALLBACK_COLOR = "var(--text-muted)";
 const NODE_TYPES = ["File", "Function", "Class", "ConfigKey", "Route", "Component", "ApiCall"];
 
 const SAMPLE_DATA = {
@@ -369,8 +369,8 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
     <div
       className="w-full h-full flex flex-col overflow-hidden"
       style={{
-        background: "#0a0d12",
-        color: "#e8ecf4",
+        background: "var(--bg-base)",
+        color: "var(--text-primary)",
         fontFamily: '-apple-system, "Segoe UI", Helvetica, Arial, sans-serif',
         minHeight: 640,
       }}
@@ -387,7 +387,7 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
         }
         .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
         .depviz-scroll::-webkit-scrollbar { width: 8px; height: 8px; }
-        .depviz-scroll::-webkit-scrollbar-thumb { background: #262d3a; border-radius: 4px; }
+        .depviz-scroll::-webkit-scrollbar-thumb { background: var(--hairline); border-radius: 4px; }
         .depviz-btn:focus-visible, .depviz-input:focus-visible, .depviz-node:focus-visible {
           outline: 2px solid #eab04c; outline-offset: 2px;
         }
@@ -396,33 +396,33 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
       {/* ---------------- top bar ---------------- */}
       <div
         className="flex items-center gap-3 px-4 shrink-0"
-        style={{ height: 56, borderBottom: "1px solid #262d3a", background: "#12161e" }}
+        style={{ height: 56, borderBottom: "1px solid var(--hairline)", background: "var(--bg-panel)" }}
       >
-        <div className="flex items-center gap-2 pr-3" style={{ borderRight: "1px solid #262d3a" }}>
+        <div className="flex items-center gap-2 pr-3" style={{ borderRight: "1px solid var(--hairline)" }}>
           <Waypoints size={18} color="#eab04c" />
           <span className="text-sm font-semibold tracking-tight">Codegraph</span>
         </div>
 
         <div className="relative flex-1 max-w-md">
-          <Search size={14} color="#4c5566" className="absolute left-2.5 top-1/2 -translate-y-1/2" />
+          <Search size={14} color="var(--text-faint)" className="absolute left-2.5 top-1/2 -translate-y-1/2" />
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search nodes by name or path..."
             className="depviz-input w-full text-xs mono rounded-md pl-7 pr-2 py-1.5"
-            style={{ background: "#0a0d12", border: "1px solid #262d3a", color: "#e8ecf4" }}
+            style={{ background: "var(--bg-base)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
           />
         </div>
 
-        <div className="flex items-center gap-3 text-[11px] mono uppercase tracking-wide" style={{ color: "#7c8698" }}>
-          <span>Nodes <b style={{ color: "#e8ecf4" }}>{data.nodes.length}</b></span>
-          <span>Edges <b style={{ color: "#e8ecf4" }}>{data.edges.length}</b></span>
+        <div className="flex items-center gap-3 text-[11px] mono uppercase tracking-wide" style={{ color: "var(--text-muted)" }}>
+          <span>Nodes <b style={{ color: "var(--text-primary)" }}>{data.nodes.length}</b></span>
+          <span>Edges <b style={{ color: "var(--text-primary)" }}>{data.edges.length}</b></span>
         </div>
 
         <button
           onClick={() => setImportOpen(true)}
           className="depviz-btn flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5 ml-1"
-          style={{ background: "#171c26", border: "1px solid #262d3a", color: "#e8ecf4" }}
+          style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
         >
           <Upload size={13} /> Import JSON
         </button>
@@ -432,7 +432,7 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
             onClick={onRefresh}
             disabled={refreshing}
             className="depviz-btn flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5"
-            style={{ background: "#171c26", border: "1px solid #262d3a", color: "#eab04c", opacity: refreshing ? 0.6 : 1 }}
+            style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)", color: "#eab04c", opacity: refreshing ? 0.6 : 1 }}
           >
             <RotateCcw size={13} className={refreshing ? "trace-active" : undefined} />
             {refreshing ? "Refreshing..." : "Refresh mapping"}
@@ -446,15 +446,15 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
           className="shrink-0 flex flex-col depviz-scroll overflow-y-auto"
           style={{
             width: filtersCollapsed ? 44 : 220,
-            borderRight: "1px solid #262d3a",
-            background: "#12161e",
+            borderRight: "1px solid var(--hairline)",
+            background: "var(--bg-panel)",
             transition: "width 150ms ease",
           }}
         >
           <button
             onClick={() => setFiltersCollapsed((v) => !v)}
             className="depviz-btn flex items-center gap-1.5 text-[10px] uppercase tracking-wider px-3 py-3"
-            style={{ color: "#7c8698" }}
+            style={{ color: "var(--text-muted)" }}
           >
             {filtersCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
             {!filtersCollapsed && "Node types"}
@@ -471,9 +471,9 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
                     onClick={() => toggleType(t)}
                     className="depviz-btn flex items-center gap-2 text-xs rounded-md px-2 py-1.5 text-left"
                     style={{
-                      background: active ? "#171c26" : "transparent",
+                      background: active ? "var(--bg-raised)" : "transparent",
                       opacity: active ? 1 : 0.4,
-                      color: "#e8ecf4",
+                      color: "var(--text-primary)",
                     }}
                   >
                     <span
@@ -484,13 +484,13 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
                     />
                     <Icon size={12} color={TYPE_COLOR[t]} />
                     <span className="flex-1">{t}</span>
-                    <span className="mono" style={{ color: "#4c5566" }}>{typeCounts[t] || 0}</span>
+                    <span className="mono" style={{ color: "var(--text-faint)" }}>{typeCounts[t] || 0}</span>
                   </button>
                 );
               })}
 
-              <div className="mt-3 pt-3" style={{ borderTop: "1px solid #262d3a" }}>
-                <div className="text-[10px] uppercase tracking-wider px-2 mb-2" style={{ color: "#7c8698" }}>
+              <div className="mt-3 pt-3" style={{ borderTop: "1px solid var(--hairline)" }}>
+                <div className="text-[10px] uppercase tracking-wider px-2 mb-2" style={{ color: "var(--text-muted)" }}>
                   Trace depth
                 </div>
                 <div className="flex gap-1 px-2">
@@ -500,9 +500,9 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
                       onClick={() => setDepth(d)}
                       className="depviz-btn text-[11px] mono rounded px-2 py-1 flex-1"
                       style={{
-                        background: depth === d ? "#eab04c" : "#171c26",
-                        color: depth === d ? "#0a0d12" : "#7c8698",
-                        border: "1px solid #262d3a",
+                        background: depth === d ? "#eab04c" : "var(--bg-raised)",
+                        color: depth === d ? "var(--bg-base)" : "var(--text-muted)",
+                        border: "1px solid var(--hairline)",
                       }}
                     >
                       {d}
@@ -515,7 +515,7 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
         </div>
 
         {/* ---------------- graph canvas ---------------- */}
-        <div className="relative flex-1 min-w-0" style={{ background: "#0a0d12" }}>
+        <div className="relative flex-1 min-w-0" style={{ background: "var(--bg-base)" }}>
           <svg
             ref={svgRef}
             viewBox={`0 0 ${CANVAS_W} ${CANVAS_H}`}
@@ -524,7 +524,7 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
           >
             <defs>
               <pattern id="grid" width="28" height="28" patternUnits="userSpaceOnUse">
-                <circle cx="1" cy="1" r="1" fill="#171c26" />
+                <circle cx="1" cy="1" r="1" fill="var(--bg-raised)" />
               </pattern>
             </defs>
             <rect x="-4000" y="-4000" width="8000" height="8000" fill="url(#grid)" />
@@ -585,10 +585,10 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
                     {isSquare ? (
                       <rect
                         x={-size} y={-size} width={size * 2} height={size * 2} rx={2}
-                        fill="#0a0d12" stroke={color} strokeWidth={isSelected ? 2.5 : 1.6}
+                        fill="var(--bg-base)" stroke={color} strokeWidth={isSelected ? 2.5 : 1.6}
                       />
                     ) : (
-                      <circle r={size} fill="#0a0d12" stroke={color} strokeWidth={isSelected ? 2.5 : 1.6} />
+                      <circle r={size} fill="var(--bg-base)" stroke={color} strokeWidth={isSelected ? 2.5 : 1.6} />
                     )}
                     <circle r={2} fill={color} />
                     {(isHovered || isSelected || transform.k > 0.9) && (
@@ -597,8 +597,8 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
                         y={4}
                         className="mono"
                         fontSize={10}
-                        fill={isSelected ? "#e8ecf4" : "#a7b0c0"}
-                        style={{ paintOrder: "stroke", stroke: "#0a0d12", strokeWidth: 3 }}
+                        fill={isSelected ? "var(--text-primary)" : "#a7b0c0"}
+                        style={{ paintOrder: "stroke", stroke: "var(--bg-base)", strokeWidth: 3 }}
                       >
                         {label}
                       </text>
@@ -611,22 +611,22 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
 
           {/* zoom controls */}
           <div className="absolute bottom-4 right-4 flex flex-col gap-1">
-            <button onClick={() => zoomBy(1.3)} className="depviz-btn p-2 rounded-md" style={{ background: "#171c26", border: "1px solid #262d3a" }}>
+            <button onClick={() => zoomBy(1.3)} className="depviz-btn p-2 rounded-md" style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)" }}>
               <ZoomIn size={14} />
             </button>
-            <button onClick={() => zoomBy(1 / 1.3)} className="depviz-btn p-2 rounded-md" style={{ background: "#171c26", border: "1px solid #262d3a" }}>
+            <button onClick={() => zoomBy(1 / 1.3)} className="depviz-btn p-2 rounded-md" style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)" }}>
               <ZoomOut size={14} />
             </button>
-            <button onClick={fitToView} className="depviz-btn p-2 rounded-md" style={{ background: "#171c26", border: "1px solid #262d3a" }}>
+            <button onClick={fitToView} className="depviz-btn p-2 rounded-md" style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)" }}>
               <Maximize2 size={14} />
             </button>
           </div>
 
           {selectedId != null && (
-            <div className="absolute bottom-4 left-4 flex items-center gap-2 text-[11px] mono px-2.5 py-1.5 rounded-md" style={{ background: "#171c26", border: "1px solid #262d3a", color: "#7c8698" }}>
+            <div className="absolute bottom-4 left-4 flex items-center gap-2 text-[11px] mono px-2.5 py-1.5 rounded-md" style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)", color: "var(--text-muted)" }}>
               <Info size={12} />
-              Tracing depth {depth} from <span style={{ color: "#e8ecf4" }}>{shortLabel(selectedNode?.name || "", selectedNode?.type)}</span>
-              <button onClick={() => setSelectedId(null)} className="depviz-btn ml-1" style={{ color: "#7c8698" }}>
+              Tracing depth {depth} from <span style={{ color: "var(--text-primary)" }}>{shortLabel(selectedNode?.name || "", selectedNode?.type)}</span>
+              <button onClick={() => setSelectedId(null)} className="depviz-btn ml-1" style={{ color: "var(--text-muted)" }}>
                 <X size={12} />
               </button>
             </div>
@@ -637,22 +637,22 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
         {selectedNode && (
           <div
             className="shrink-0 flex flex-col depviz-scroll overflow-y-auto"
-            style={{ width: 300, borderLeft: "1px solid #262d3a", background: "#12161e" }}
+            style={{ width: 300, borderLeft: "1px solid var(--hairline)", background: "var(--bg-panel)" }}
           >
-            <div className="flex items-start justify-between px-4 pt-4 pb-3" style={{ borderBottom: "1px solid #262d3a" }}>
+            <div className="flex items-start justify-between px-4 pt-4 pb-3" style={{ borderBottom: "1px solid var(--hairline)" }}>
               <div>
                 <div className="flex items-center gap-1.5 text-[10px] uppercase tracking-wider mb-1" style={{ color: TYPE_COLOR[selectedNode.type] || FALLBACK_COLOR }}>
                   {React.createElement(TYPE_ICON[selectedNode.type] || CircleDot, { size: 11 })}
                   {selectedNode.type}
                 </div>
-                <div className="text-sm mono break-all" style={{ color: "#e8ecf4" }}>{selectedNode.name}</div>
+                <div className="text-sm mono break-all" style={{ color: "var(--text-primary)" }}>{selectedNode.name}</div>
               </div>
-              <button onClick={() => setSelectedId(null)} className="depviz-btn" style={{ color: "#7c8698" }}>
+              <button onClick={() => setSelectedId(null)} className="depviz-btn" style={{ color: "var(--text-muted)" }}>
                 <X size={16} />
               </button>
             </div>
 
-            <div className="px-4 py-3 text-xs flex flex-col gap-2" style={{ borderBottom: "1px solid #262d3a" }}>
+            <div className="px-4 py-3 text-xs flex flex-col gap-2" style={{ borderBottom: "1px solid var(--hairline)" }}>
               {selectedNode.file_path && (
                 <Row label="File" value={selectedNode.file_path + (selectedNode.line_start ? `:${selectedNode.line_start}` : "")} />
               )}
@@ -687,24 +687,24 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
         >
           <div
             className="w-full max-w-lg rounded-lg p-4 flex flex-col gap-3"
-            style={{ background: "#12161e", border: "1px solid #262d3a" }}
+            style={{ background: "var(--bg-panel)", border: "1px solid var(--hairline)" }}
             onClick={(e) => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
               <div className="text-sm font-semibold">Import graph JSON</div>
-              <button onClick={() => setImportOpen(false)} className="depviz-btn" style={{ color: "#7c8698" }}>
+              <button onClick={() => setImportOpen(false)} className="depviz-btn" style={{ color: "var(--text-muted)" }}>
                 <X size={16} />
               </button>
             </div>
 
-            <div className="text-xs" style={{ color: "#7c8698" }}>
+            <div className="text-xs" style={{ color: "var(--text-muted)" }}>
               Connect to a running codegraph API, or paste a{" "}
               <span className="mono">/api/graph</span> response shaped as{" "}
               <span className="mono">{`{ nodes: [...], edges: [...] }`}</span>.
             </div>
 
             <div>
-              <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "#4c5566" }}>
+              <div className="text-[10px] uppercase tracking-wider mb-1" style={{ color: "var(--text-faint)" }}>
                 API base URL
               </div>
               <div className="flex gap-2">
@@ -713,23 +713,23 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
                   onChange={(e) => setApiUrl(e.target.value)}
                   placeholder="http://localhost:8000"
                   className="depviz-input flex-1 text-xs mono rounded-md px-2 py-1.5"
-                  style={{ background: "#0a0d12", border: "1px solid #262d3a", color: "#e8ecf4" }}
+                  style={{ background: "var(--bg-base)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
                 />
                 <button
                   onClick={handleFetchFromApi}
                   disabled={apiLoading}
                   className="depviz-btn text-xs rounded-md px-3 py-1.5 font-medium shrink-0"
-                  style={{ background: "#eab04c", color: "#0a0d12", opacity: apiLoading ? 0.6 : 1 }}
+                  style={{ background: "#eab04c", color: "var(--bg-base)", opacity: apiLoading ? 0.6 : 1 }}
                 >
                   {apiLoading ? "Loading..." : "Fetch"}
                 </button>
               </div>
             </div>
 
-            <div className="flex items-center gap-2" style={{ color: "#4c5566" }}>
-              <div className="flex-1 h-px" style={{ background: "#262d3a" }} />
+            <div className="flex items-center gap-2" style={{ color: "var(--text-faint)" }}>
+              <div className="flex-1 h-px" style={{ background: "var(--hairline)" }} />
               <span className="text-[10px] uppercase tracking-wider">or paste JSON</span>
-              <div className="flex-1 h-px" style={{ background: "#262d3a" }} />
+              <div className="flex-1 h-px" style={{ background: "var(--hairline)" }} />
             </div>
 
             <textarea
@@ -737,7 +737,7 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
               onChange={(e) => setImportText(e.target.value)}
               rows={10}
               className="depviz-input mono text-xs rounded-md p-2 w-full"
-              style={{ background: "#0a0d12", border: "1px solid #262d3a", color: "#e8ecf4", resize: "vertical" }}
+              style={{ background: "var(--bg-base)", border: "1px solid var(--hairline)", color: "var(--text-primary)", resize: "vertical" }}
               placeholder='{"nodes": [...], "edges": [...]}'
             />
             {importError && <div className="text-xs" style={{ color: "#ef5da8" }}>{importError}</div>}
@@ -745,14 +745,14 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
               <button
                 onClick={() => { setData(SAMPLE_DATA); setImportOpen(false); setImportError(""); }}
                 className="depviz-btn flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5"
-                style={{ background: "#171c26", border: "1px solid #262d3a", color: "#7c8698" }}
+                style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)", color: "var(--text-muted)" }}
               >
                 <RotateCcw size={12} /> Reset to sample
               </button>
               <button
                 onClick={handleImport}
                 className="depviz-btn text-xs rounded-md px-3 py-1.5 font-medium"
-                style={{ background: "#eab04c", color: "#0a0d12" }}
+                style={{ background: "#eab04c", color: "var(--bg-base)" }}
               >
                 Load graph
               </button>
@@ -767,7 +767,7 @@ export default function DependencyGraphExplorer({ externalData, onRefresh, refre
 function Row({ label, value }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "#4c5566" }}>{label}</div>
+      <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: "var(--text-faint)" }}>{label}</div>
       <div className="mono break-all" style={{ color: "#c3cad6" }}>{value}</div>
     </div>
   );
@@ -775,15 +775,15 @@ function Row({ label, value }) {
 
 function Section({ title, children }) {
   return (
-    <div className="px-4 py-3" style={{ borderBottom: "1px solid #262d3a" }}>
-      <div className="text-[10px] uppercase tracking-wider mb-2" style={{ color: "#7c8698" }}>{title}</div>
+    <div className="px-4 py-3" style={{ borderBottom: "1px solid var(--hairline)" }}>
+      <div className="text-[10px] uppercase tracking-wider mb-2" style={{ color: "var(--text-muted)" }}>{title}</div>
       <div className="flex flex-col gap-1">{children}</div>
     </div>
   );
 }
 
 function Empty({ text }) {
-  return <div className="text-xs" style={{ color: "#4c5566" }}>{text}</div>;
+  return <div className="text-xs" style={{ color: "var(--text-faint)" }}>{text}</div>;
 }
 
 function EdgeRow({ edge, node, onClick }) {
@@ -794,11 +794,11 @@ function EdgeRow({ edge, node, onClick }) {
     <button
       onClick={onClick}
       className="depviz-btn flex items-center gap-2 text-xs rounded-md px-2 py-1.5 text-left"
-      style={{ background: "#171c26" }}
+      style={{ background: "var(--bg-raised)" }}
     >
       <Icon size={12} color={color} />
-      <span className="mono flex-1 truncate" style={{ color: "#e8ecf4" }}>{shortLabel(node.name, node.type)}</span>
-      <span className="text-[10px] mono" style={{ color: "#4c5566" }}>{edge.type}</span>
+      <span className="mono flex-1 truncate" style={{ color: "var(--text-primary)" }}>{shortLabel(node.name, node.type)}</span>
+      <span className="text-[10px] mono" style={{ color: "var(--text-faint)" }}>{edge.type}</span>
     </button>
   );
 }

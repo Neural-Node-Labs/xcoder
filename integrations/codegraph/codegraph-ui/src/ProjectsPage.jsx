@@ -8,7 +8,7 @@ import { useAuth } from "./AuthContext.jsx";
 const STATUS_STYLE = {
   ready: { bg: "#123a1e", fg: "#43d17a", label: "ready" },
   indexing: { bg: "#3a2a12", fg: "#f2b84b", label: "indexing..." },
-  empty: { bg: "#171c26", fg: "#7c8698", label: "no source yet" },
+  empty: { bg: "var(--bg-raised)", fg: "var(--text-muted)", label: "no source yet" },
   error: { bg: "#2a1620", fg: "#ef5da8", label: "error" },
 };
 
@@ -72,7 +72,7 @@ export default function ProjectsPage({ selectedProjectId, onSelectProject, onPro
   const indexProject = (p) => withBusy(p.id, () => api.indexProject(p.id));
 
   return (
-    <div className="flex-1 overflow-y-auto p-6" style={{ color: "#e8ecf4" }}>
+    <div className="flex-1 overflow-y-auto p-6" style={{ color: "var(--text-primary)" }}>
       <div className="flex items-center justify-between mb-4">
         <div className="flex items-center gap-2">
           <FolderGit2 size={16} color="#eab04c" />
@@ -82,7 +82,7 @@ export default function ProjectsPage({ selectedProjectId, onSelectProject, onPro
           <button
             onClick={() => setShowCreate(true)}
             className="flex items-center gap-1.5 text-xs rounded-md px-2.5 py-1.5"
-            style={{ background: "#eab04c", color: "#0a0d12" }}
+            style={{ background: "#eab04c", color: "var(--bg-base)" }}
           >
             <Plus size={13} /> New project
           </button>
@@ -95,10 +95,10 @@ export default function ProjectsPage({ selectedProjectId, onSelectProject, onPro
         </div>
       )}
 
-      {loading && <div className="text-xs" style={{ color: "#4c5566" }}>Loading...</div>}
+      {loading && <div className="text-xs" style={{ color: "var(--text-faint)" }}>Loading...</div>}
 
       {!loading && projects.length === 0 && (
-        <div className="text-xs rounded-lg p-6 text-center" style={{ background: "#12161e", border: "1px dashed #262d3a", color: "#7c8698" }}>
+        <div className="text-xs rounded-lg p-6 text-center" style={{ background: "var(--bg-panel)", border: "1px dashed var(--hairline)", color: "var(--text-muted)" }}>
           No projects yet.{isAdmin ? " Create one, then upload a zip of its source to index it." : " Ask an admin to create one."}
         </div>
       )}
@@ -176,8 +176,8 @@ function ProjectCard({ project, isAdmin, isSelected, busy, onSelect, onIndex, on
     <div
       className="rounded-lg p-3 flex flex-col gap-2"
       style={{
-        background: "#12161e",
-        border: isSelected ? "1px solid #eab04c" : "1px solid #262d3a",
+        background: "var(--bg-panel)",
+        border: isSelected ? "1px solid #eab04c" : "1px solid var(--hairline)",
       }}
     >
       <div className="flex items-start justify-between gap-2">
@@ -190,10 +190,10 @@ function ProjectCard({ project, isAdmin, isSelected, busy, onSelect, onIndex, on
                 onChange={(e) => setName(e.target.value)}
                 onKeyDown={(e) => e.key === "Enter" && saveRename()}
                 className="text-sm rounded px-1.5 py-0.5 w-full"
-                style={{ background: "#0a0d12", border: "1px solid #262d3a", color: "#e8ecf4" }}
+                style={{ background: "var(--bg-base)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
               />
               <button onClick={saveRename} style={{ color: "#43d17a" }}><Check size={14} /></button>
-              <button onClick={() => { setRenaming(false); setName(project.name); }} style={{ color: "#7c8698" }}><X size={14} /></button>
+              <button onClick={() => { setRenaming(false); setName(project.name); }} style={{ color: "var(--text-muted)" }}><X size={14} /></button>
             </div>
           ) : (
             <div className="flex items-center gap-1.5">
@@ -201,16 +201,16 @@ function ProjectCard({ project, isAdmin, isSelected, busy, onSelect, onIndex, on
               {isSelected && <CircleCheck size={13} color="#eab04c" title="Active project" />}
             </div>
           )}
-          <div className="text-[11px] mono truncate" style={{ color: "#4c5566" }}>{project.slug}</div>
+          <div className="text-[11px] mono truncate" style={{ color: "var(--text-faint)" }}>{project.slug}</div>
         </div>
         <StatusBadge status={project.status} />
       </div>
 
       {project.description && (
-        <div className="text-[11px] truncate" style={{ color: "#7c8698" }}>{project.description}</div>
+        <div className="text-[11px] truncate" style={{ color: "var(--text-muted)" }}>{project.description}</div>
       )}
 
-      <div className="text-[11px] mono flex items-center gap-3" style={{ color: "#7c8698" }}>
+      <div className="text-[11px] mono flex items-center gap-3" style={{ color: "var(--text-muted)" }}>
         <span>{project.node_count} nodes</span>
         <span>{project.edge_count} edges</span>
         {project.last_indexed_at && <span>indexed {project.last_indexed_at.split(" ")[0]}</span>}
@@ -233,8 +233,8 @@ function ProjectCard({ project, isAdmin, isSelected, busy, onSelect, onIndex, on
           className="text-[11px] rounded-md px-2 py-2 flex items-center justify-center gap-1.5 cursor-pointer"
           style={{
             border: `1px dashed ${dragOver ? "#eab04c" : "#333944"}`,
-            color: dragOver ? "#eab04c" : "#7c8698",
-            background: dragOver ? "#171c26" : "transparent",
+            color: dragOver ? "#eab04c" : "var(--text-muted)",
+            background: dragOver ? "var(--bg-raised)" : "transparent",
           }}
         >
           <UploadCloud size={13} />
@@ -254,7 +254,7 @@ function ProjectCard({ project, isAdmin, isSelected, busy, onSelect, onIndex, on
           onClick={onSelect}
           disabled={isSelected}
           className="flex-1 text-xs rounded-md py-1.5"
-          style={{ background: isSelected ? "#171c26" : "#eab04c", color: isSelected ? "#7c8698" : "#0a0d12", opacity: isSelected ? 0.7 : 1 }}
+          style={{ background: isSelected ? "var(--bg-raised)" : "#eab04c", color: isSelected ? "var(--text-muted)" : "var(--bg-base)", opacity: isSelected ? 0.7 : 1 }}
         >
           {isSelected ? "Active" : "Select"}
         </button>
@@ -263,13 +263,13 @@ function ProjectCard({ project, isAdmin, isSelected, busy, onSelect, onIndex, on
           disabled={busy || project.status === "empty" || project.status === "indexing"}
           title="Re-index this project"
           className="flex items-center gap-1 text-xs rounded-md px-2 py-1.5"
-          style={{ background: "#171c26", border: "1px solid #262d3a", color: "#e8ecf4", opacity: busy || project.status === "empty" ? 0.5 : 1 }}
+          style={{ background: "var(--bg-raised)", border: "1px solid var(--hairline)", color: "var(--text-primary)", opacity: busy || project.status === "empty" ? 0.5 : 1 }}
         >
           <RefreshCw size={12} className={busy ? "animate-spin" : ""} /> Index
         </button>
         {isAdmin && (
           <>
-            <button onClick={() => setRenaming(true)} title="Rename" style={{ color: "#7c8698" }}>
+            <button onClick={() => setRenaming(true)} title="Rename" style={{ color: "var(--text-muted)" }}>
               <Pencil size={13} />
             </button>
             <button onClick={onDelete} title="Delete project" style={{ color: "#ef5da8" }}>
@@ -303,28 +303,28 @@ function CreateProjectModal({ onClose, onCreated }) {
 
   return (
     <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: "rgba(10,13,18,0.7)" }} onClick={onClose}>
-      <div className="w-full max-w-sm rounded-lg p-4 flex flex-col gap-3" style={{ background: "#12161e", border: "1px solid #262d3a" }} onClick={(e) => e.stopPropagation()}>
+      <div className="w-full max-w-sm rounded-lg p-4 flex flex-col gap-3" style={{ background: "var(--bg-panel)", border: "1px solid var(--hairline)" }} onClick={(e) => e.stopPropagation()}>
         <div className="flex items-center justify-between">
           <div className="text-sm font-semibold">New project</div>
-          <button onClick={onClose} style={{ color: "#7c8698" }}><X size={16} /></button>
+          <button onClick={onClose} style={{ color: "var(--text-muted)" }}><X size={16} /></button>
         </div>
         <input
           value={name} onChange={(e) => setName(e.target.value)} placeholder="project name"
-          className="text-xs rounded-md px-2 py-1.5" style={{ background: "#0a0d12", border: "1px solid #262d3a", color: "#e8ecf4" }}
+          className="text-xs rounded-md px-2 py-1.5" style={{ background: "var(--bg-base)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
         />
         <input
           value={description} onChange={(e) => setDescription(e.target.value)} placeholder="description (optional)"
-          className="text-xs rounded-md px-2 py-1.5" style={{ background: "#0a0d12", border: "1px solid #262d3a", color: "#e8ecf4" }}
+          className="text-xs rounded-md px-2 py-1.5" style={{ background: "var(--bg-base)", border: "1px solid var(--hairline)", color: "var(--text-primary)" }}
         />
         {error && <div className="text-xs" style={{ color: "#ef5da8" }}>{error}</div>}
         <button
           onClick={submit} disabled={busy || !name.trim()}
           className="text-xs rounded-md px-3 py-2 font-medium"
-          style={{ background: "#eab04c", color: "#0a0d12", opacity: busy || !name.trim() ? 0.5 : 1 }}
+          style={{ background: "#eab04c", color: "var(--bg-base)", opacity: busy || !name.trim() ? 0.5 : 1 }}
         >
           {busy ? "Creating..." : "Create project"}
         </button>
-        <div className="text-[11px]" style={{ color: "#4c5566" }}>
+        <div className="text-[11px]" style={{ color: "var(--text-faint)" }}>
           After creating, upload a .zip of the source — it's unzipped into the project automatically, then you can index it.
         </div>
       </div>

@@ -1,4 +1,5 @@
 import { useAuth } from "../context/AuthContext";
+import { XcoderLogo } from "./XcoderLogo";
 
 export type Page = "dashboard" | "wbs" | "history" | "skills" | "projects" | "workspace" | "tools" | "codegraph" | "secops" | "logs" | "users" | "auditlog" | "settings";
 
@@ -39,7 +40,9 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
   return (
     <aside className="sidebar">
       <div className="brand">
-        <div className="brand-mark">⌗</div>
+        <div className="brand-mark">
+          <XcoderLogo size={30} />
+        </div>
         <div>
           <div className="brand-text">xcoder</div>
           <div className="brand-sub">SDLC Platform</div>

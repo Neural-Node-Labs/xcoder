@@ -210,6 +210,21 @@ program
       const port = opts.port || 3001;
       const host = opts.host || "0.0.0.0";
 
+      // Prefer the built dashboard (ui/dist) when it exists — that's what `npm run ui:build` /
+      // `npm run build:standalone` produce, and server.ts (see XCODER_UI_DIST) already serves
+      // it from the very same process/port as the API. Falling back to spawning Vite's dev
+      // server below is for local development against an unbuilt checkout only: it needs
+      // ui/node_modules installed, keeps a second process alive, and — unlike the built-in
+      // static serving — was never meant for a standalone/production deployment (see
+      // STANDALONE.md).
+      const uiDistDir = path.resolve(cwd, "ui", "dist");
+      if (fs.existsSync(path.join(uiDistDir, "index.html"))) {
+        console.log("🚀 Sinisimulan ang xcoder API server (kasama ang built dashboard)...\n");
+        startApiServer({ port, host });
+        console.log(`\n✅ Dashboard: http://${host === "0.0.0.0" ? "localhost" : host}:${port}/`);
+        return;
+      }
+
       console.log("🚀 Sinisimulan ang xcoder API server at UI frontend...\n");
 
       // 1. Simulan ang API server
@@ -222,6 +237,8 @@ program
         console.error(`❌ Hindi nahanap ang UI directory sa: ${uiDir}`);
         process.exit(1);
       }
+
+      console.log(`ℹ️  Walang nahanap na built dashboard sa ${uiDistDir} — sinisimulan ang Vite dev server sa halip (para sa production/standalone, patakbuhin muna ang "npm run ui:build").`);
 
       // 3. I-spawn ang Vite dev server process para sa UI
       const uiProcess = spawn("npm", ["run", "dev"], {

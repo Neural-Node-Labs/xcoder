@@ -1,0 +1,36 @@
+# systemd unit template for running xcoder as a background daemon without Docker.
+# install.sh fills in the placeholders below (__INSTALL_DIR__, __SERVICE_USER__, __EXEC_MODE__)
+# and writes the result to /etc/systemd/system/xcoder.service — this file itself is never used
+# directly. To hand-install instead of using install.sh: copy this file, replace the
+# placeholders yourself, drop it in /etc/systemd/system/xcoder.service, then
+# `systemctl daemon-reload && systemctl enable --now xcoder`.
+[Unit]
+Description=xcoder — DAG-based SDLC orchestration agent
+Documentation=https://github.com/
+After=network.target
+# Uncomment if PostgreSQL runs as its own systemd-managed service on this same host (task-log
+# telemetry via DATABASE_URL is optional — xcoder degrades gracefully without it, see
+# routes.ts — so this is a soft ordering hint, not a hard dependency):
+# After=postgresql.service
+
+[Service]
+Type=simple
+User=__SERVICE_USER__
+WorkingDirectory=__INSTALL_DIR__
+EnvironmentFile=-__INSTALL_DIR__/.env
+ExecStart=/usr/bin/env node __INSTALL_DIR__/dist/cli/index.js __EXEC_MODE__
+Restart=on-failure
+RestartSec=5
+# Hardening: reasonable defaults for a service that also shells out to a handful of allowlisted
+# CLI tools (git, npm, security-ops probes — see src/tools/securityOpsTool.ts) as the service
+# user, so this stops short of NoNewPrivileges/ProtectSystem=strict, which would break those.
+NoNewPrivileges=false
+LimitNOFILE=65536
+
+# journalctl -u xcoder -f  — tails these
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=xcoder
+
+[Install]
+WantedBy=multi-user.target
