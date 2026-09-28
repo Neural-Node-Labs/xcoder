@@ -1277,17 +1277,6 @@ tr:hover td {
   background: rgba(0, 0, 0, 0.3);
 }
 
-.jarvis-mood-badge {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 11px;
-  padding: 3px 12px 3px 3px;
-  border-radius: 999px;
-  background: rgba(0, 0, 0, 0.3);
-  border: 1px solid var(--border);
-}
-
 .jarvis-task-card {
   width: 100%;
 }

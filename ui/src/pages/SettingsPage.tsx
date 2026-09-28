@@ -2,6 +2,8 @@ import { useState, useEffect } from "react";
 import { api, HealthResponse, EnginesResponse, LlmConfigSummary, LlmProviderDefault } from "../api/client";
 import { THEMES, applyTheme, getStoredTheme } from "../theme";
 import { JarvisHologram, JarvisMood } from "../components/JarvisHologram";
+import { Halogram } from "../components/Halogram";
+import { HOLOGRAM_STYLES, getStoredHologramStyle, setHologramStyle } from "../hologramStyle";
 import { DEFAULT_ASSISTANT_NAME, getAssistantName, setAssistantName } from "../assistantName";
 
 const JARVIS_MOODS: JarvisMood[] = ["ready", "happy", "sad", "alert", "attack", "danger"];
@@ -14,7 +16,8 @@ export function SettingsPage() {
   const [health, setHealth] = useState<HealthResponse | null>(null);
   const [engines, setEngines] = useState<EnginesResponse | null>(null);
   const [theme, setTheme] = useState<string>(() => getStoredTheme());
-  const [jarvisMood, setJarvisMood] = useState<JarvisMood>("ready");
+  const [demoMood, setDemoMood] = useState<JarvisMood>("ready");
+  const [hologramStyleChoice, setHologramStyleChoice] = useState(() => getStoredHologramStyle());
   const [assistantNameInput, setAssistantNameInput] = useState<string>(() => getAssistantName());
   const [assistantNameSaved, setAssistantNameSaved] = useState(false);
 
@@ -293,31 +296,65 @@ export function SettingsPage() {
       </div>
 
       <div className="card" style={{ gridColumn: "1 / -1" }}>
-        <div className="card-title">Assistant hologram</div>
+        <div className="card-title">Hologram</div>
         <p className="text-2" style={{ marginTop: 0, marginBottom: 16, fontSize: 12 }}>
-          A standalone, mood-reactive HUD avatar (<code>ui/src/components/JarvisHologram.tsx</code>)
-          — pure React + CSS, no dependency on this app's theme, so it drops into any other
-          project unchanged. Not wired to anything live here yet; this is just a preview of every
-          mood so you can see the animation before reusing it elsewhere.
+          Which avatar renders in the Chat tab, and a live preview of every mood it can show.
+          Both components take the same props (mood/thinking/listening/assistantName) — this
+          only changes which one <code>ChatPanel.tsx</code> renders, not how mood itself works.
         </p>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
+          {HOLOGRAM_STYLES.map((s) => (
+            <button
+              key={s.id}
+              type="button"
+              className="btn btn-sm"
+              onClick={() => {
+                setHologramStyle(s.id);
+                setHologramStyleChoice(s.id);
+              }}
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "flex-start",
+                gap: 4,
+                minWidth: 200,
+                padding: "10px 14px",
+                border: hologramStyleChoice === s.id ? "1px solid var(--border-hover)" : "1px solid var(--border)",
+                background: hologramStyleChoice === s.id ? "var(--accent-dim)" : "var(--glass-1)",
+              }}
+            >
+              <span style={{ fontWeight: 600, fontSize: 13 }}>
+                {s.label}
+                {hologramStyleChoice === s.id ? " ✓" : ""}
+              </span>
+              <span className="text-2" style={{ fontSize: 11, textAlign: "left" }}>
+                {s.description}
+              </span>
+            </button>
+          ))}
+        </div>
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-          <JarvisHologram mood={jarvisMood} size={160} />
+          {hologramStyleChoice === "halogram" ? (
+            <Halogram mood={demoMood} size={160} />
+          ) : (
+            <JarvisHologram mood={demoMood} size={160} />
+          )}
           <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 140 }}>
             {JARVIS_MOODS.map((m) => (
               <button
                 key={m}
                 type="button"
                 className="btn btn-sm"
-                onClick={() => setJarvisMood(m)}
+                onClick={() => setDemoMood(m)}
                 style={{
                   textAlign: "left",
                   textTransform: "capitalize",
-                  border: jarvisMood === m ? "1px solid var(--border-hover)" : "1px solid var(--border)",
-                  background: jarvisMood === m ? "var(--accent-dim)" : "var(--glass-1)",
+                  border: demoMood === m ? "1px solid var(--border-hover)" : "1px solid var(--border)",
+                  background: demoMood === m ? "var(--accent-dim)" : "var(--glass-1)",
                 }}
               >
                 {m}
-                {jarvisMood === m ? " ✓" : ""}
+                {demoMood === m ? " ✓" : ""}
               </button>
             ))}
           </div>

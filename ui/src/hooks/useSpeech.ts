@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 /**
- * Voice input, voice output, and UI sound cues for the Task and Chat tabs.
+ * Voice input (dictation, with optional silence-triggered auto-submit and wake-word
+ * hands-free activation), voice output, and UI sound cues for the Task and Chat tabs.
  *
  * All three are built on browser APIs with no dependencies, and all three are strictly
  * optional: every hook here reports whether it's supported and degrades to a no-op when it
@@ -108,6 +109,23 @@ export interface SpeechRecognitionState {
   toggle: () => void;
 }
 
+export interface SpeechRecognitionOptions {
+  /**
+   * If set, dictation auto-stops and `onSilence` fires after this many ms with no interim or
+   * final speech activity — the "anticipate the stop of my audio" auto-submit behavior. The
+   * clock only starts once actual speech has been heard at least once (never fires just because
+   * the user hasn't started talking yet), and resets on every subsequent interim or final
+   * result, so it's genuinely "N ms of silence after speaking," not "N ms since pressing the
+   * mic button." Omit (or 0) to disable — recognition then only stops when the caller calls
+   * stop()/toggle(), same as before this option existed.
+   */
+  autoSubmitSilenceMs?: number;
+  /** Called once when the silence timer fires. Recognition has already been stopped by the
+   *  time this runs, so the caller just needs to act on whatever text it already accumulated
+   *  via onFinalTranscript (e.g. send it) — it does not need to call stop() itself. */
+  onSilence?: () => void;
+}
+
 /**
  * Dictation into a text field.
  *
@@ -115,7 +133,7 @@ export interface SpeechRecognitionState {
  *   engine commits them, so a caller appending to an existing value builds up a sentence
  *   naturally; it is never called with interim guesses.
  */
-export function useSpeechRecognition(onFinalTranscript: (text: string) => void): SpeechRecognitionState {
+export function useSpeechRecognition(onFinalTranscript: (text: string) => void, options: SpeechRecognitionOptions = {}): SpeechRecognitionState {
   const [listening, setListening] = useState(false);
   const [interim, setInterim] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -124,19 +142,45 @@ export function useSpeechRecognition(onFinalTranscript: (text: string) => void):
   // rather than the one captured when it was constructed.
   const callbackRef = useRef(onFinalTranscript);
   callbackRef.current = onFinalTranscript;
+  const optionsRef = useRef(options);
+  optionsRef.current = options;
+  const silenceTimerRef = useRef<number | null>(null);
 
   const supported = useMemo(() => recognitionCtor() !== null, []);
 
+  const clearSilenceTimer = useCallback(() => {
+    if (silenceTimerRef.current !== null) {
+      window.clearTimeout(silenceTimerRef.current);
+      silenceTimerRef.current = null;
+    }
+  }, []);
+
+  // Restarts the "how long has it been quiet" clock — called on every speech event (interim
+  // or final), so it only ever fires after a genuine gap, never mid-sentence.
+  const armSilenceTimer = useCallback(() => {
+    clearSilenceTimer();
+    const ms = optionsRef.current.autoSubmitSilenceMs;
+    if (!ms) return;
+    silenceTimerRef.current = window.setTimeout(() => {
+      recognitionRef.current?.stop();
+      setListening(false);
+      setInterim("");
+      optionsRef.current.onSilence?.();
+    }, ms);
+  }, [clearSilenceTimer]);
+
   const stop = useCallback(() => {
+    clearSilenceTimer();
     recognitionRef.current?.stop();
     setListening(false);
     setInterim("");
-  }, []);
+  }, [clearSilenceTimer]);
 
   const start = useCallback(() => {
     const Ctor = recognitionCtor();
     if (!Ctor) return;
 
+    clearSilenceTimer();
     // Tear down any previous instance first — starting an already-started recognizer throws
     // an InvalidStateError, which is easy to hit by double-clicking the mic button.
     recognitionRef.current?.abort();
@@ -158,6 +202,7 @@ export function useSpeechRecognition(onFinalTranscript: (text: string) => void):
         else interimText += transcript;
       }
       setInterim(interimText);
+      if (finalText.trim() || interimText.trim()) armSilenceTimer();
       if (finalText.trim()) callbackRef.current(finalText.trim());
     };
 
@@ -165,6 +210,7 @@ export function useSpeechRecognition(onFinalTranscript: (text: string) => void):
       // "no-speech" and "aborted" are ordinary — the user paused, or stopped deliberately.
       // Surfacing those as errors would make the control feel broken during normal use.
       if (event.error === "no-speech" || event.error === "aborted") return;
+      clearSilenceTimer();
       setError(
         event.error === "not-allowed"
           ? "Microphone access was denied. Allow it in your browser's site settings to dictate."
@@ -174,6 +220,7 @@ export function useSpeechRecognition(onFinalTranscript: (text: string) => void):
     };
 
     recognition.onend = () => {
+      clearSilenceTimer();
       setListening(false);
       setInterim("");
     };
@@ -187,7 +234,7 @@ export function useSpeechRecognition(onFinalTranscript: (text: string) => void):
       setError("Could not start voice input.");
       setListening(false);
     }
-  }, []);
+  }, [armSilenceTimer, clearSilenceTimer]);
 
   const toggle = useCallback(() => {
     if (listening) stop();
@@ -196,9 +243,134 @@ export function useSpeechRecognition(onFinalTranscript: (text: string) => void):
 
   // Release the microphone if the component unmounts mid-dictation — otherwise the browser's
   // recording indicator stays lit after navigating away from the tab.
-  useEffect(() => () => recognitionRef.current?.abort(), []);
+  useEffect(() => () => {
+    clearSilenceTimer();
+    recognitionRef.current?.abort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   return { supported, listening, interim, error, start, stop, toggle };
+}
+
+// ─── Wake word ("hands-free" activation) ─────────────────────────────────────────
+
+export interface WakeWordState {
+  supported: boolean;
+  /** True while passively listening for the phrase (not the same as dictation's `listening` —
+   *  a caller typically shows a shared "I'm listening" indicator for either). */
+  listening: boolean;
+  error: string | null;
+}
+
+/**
+ * Passively listens for `phrase` and calls `onWake` when heard — the "say a phrase to start
+ * dictating instead of clicking a button" half of voice input. Deliberately opt-in via
+ * `enabled` (never starts itself) and always exposes `listening` so the caller can show it
+ * plainly: unlike a dedicated wake-word chip, this runs full continuous speech-to-text under
+ * the hood (the Web Speech API has no lighter-weight "just listen for one phrase" mode), which
+ * in Chrome/Edge means the microphone is actively streaming audio to Google's speech
+ * recognition service for as long as this is on — worth being visible about rather than a
+ * silent background feature.
+ *
+ * Only one SpeechRecognition instance should ever be started at a time (see useSpeech.ts's
+ * header) — so callers must set `enabled: false` while dictation (useSpeechRecognition) is
+ * actively listening, and flip it back once dictation ends. ChatPanel.tsx does this by passing
+ * `enabled={wakeWordDesired && !recognition.listening}`.
+ *
+ * @param phrase Matched case-insensitively as a substring of the final transcript (not an exact
+ *   match) — "hey xcoder ai", "ok, xcoder ai please", and "xcoder ai" all match a phrase of
+ *   "xcoder ai". Punctuation is stripped before comparing.
+ */
+export function useWakeWord(phrase: string, enabled: boolean, onWake: () => void): WakeWordState {
+  const [listening, setListening] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const recognitionRef = useRef<SpeechRecognitionLike | null>(null);
+  const onWakeRef = useRef(onWake);
+  onWakeRef.current = onWake;
+  const phraseRef = useRef(phrase);
+  phraseRef.current = phrase;
+  // Guards against a restart loop hammering the browser if permission was denied — one
+  // "not-allowed" is enough to know retrying won't help until the user changes that setting.
+  const deniedRef = useRef(false);
+
+  const supported = useMemo(() => recognitionCtor() !== null, []);
+
+  useEffect(() => {
+    if (!enabled || !supported || deniedRef.current) {
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+      setListening(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    function launch() {
+      if (cancelled) return;
+      const Ctor = recognitionCtor();
+      if (!Ctor) return;
+
+      const recognition = new Ctor();
+      recognition.lang = navigator.language || "en-US";
+      recognition.continuous = true;
+      // Only final results are checked — cheaper, and a wake phrase doesn't need live interim
+      // feedback the way dictation does.
+      recognition.interimResults = false;
+
+      recognition.onresult = (event) => {
+        for (let i = event.resultIndex; i < event.results.length; i++) {
+          const result = event.results[i];
+          if (!result.isFinal) continue;
+          const normalized = result[0].transcript.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+          const target = phraseRef.current.toLowerCase().replace(/[^a-z0-9\s]/g, "").trim();
+          if (target && normalized.includes(target)) {
+            onWakeRef.current();
+            return;
+          }
+        }
+      };
+
+      recognition.onerror = (event) => {
+        if (event.error === "no-speech" || event.error === "aborted") return;
+        if (event.error === "not-allowed") {
+          deniedRef.current = true;
+          setError("Microphone access was denied. Allow it in your browser's site settings to use the wake word.");
+          setListening(false);
+          return;
+        }
+        // Anything else (network hiccups are common on a long-lived connection) — let onend's
+        // restart handle it rather than surfacing every transient blip as a visible error.
+      };
+
+      recognition.onend = () => {
+        setListening(false);
+        // The engine ends this on its own periodically even with continuous=true (long-lived
+        // network speech connections are not guaranteed forever) — restart automatically for
+        // as long as this is still meant to be on, so "wake word" actually means always-on
+        // rather than "on until the next unrelated hiccup."
+        if (!cancelled && enabled && !deniedRef.current) launch();
+      };
+
+      recognitionRef.current = recognition;
+      try {
+        recognition.start();
+        setListening(true);
+        setError(null);
+      } catch {
+        setListening(false);
+      }
+    }
+
+    launch();
+
+    return () => {
+      cancelled = true;
+      recognitionRef.current?.abort();
+      recognitionRef.current = null;
+    };
+  }, [enabled, supported]);
+
+  return { supported, listening, error };
 }
 
 // ─── Voice output (speech synthesis) ────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { SpeechRecognitionState, SpeechSynthesisState, UiSoundsState } from "../hooks/useSpeech";
+import { SpeechRecognitionState, SpeechSynthesisState, UiSoundsState, WakeWordState } from "../hooks/useSpeech";
 
 /**
  * The mic / speaker / sound-cue controls shared by the Task and Chat tabs.
@@ -52,6 +52,31 @@ export function SoundToggle({ sounds }: { sounds: UiSoundsState }) {
       aria-label={sounds.enabled ? "Turn off sound cues" : "Turn on sound cues"}
     >
       {sounds.enabled ? "♪" : "♪̸"}
+    </button>
+  );
+}
+
+/** Toggles hands-free wake-word activation on or off — see useWakeWord's doc comment for why
+ *  this is opt-in (it's full continuous speech-to-text under the hood, not a lightweight
+ *  on-device wake-word chip, so leaving it on means the mic keeps streaming audio to the
+ *  browser's speech service). The title text says as much so the tradeoff is visible at the
+ *  point the user turns it on, not buried in a settings page. */
+export function WakeWordToggle({ wakeWord, phrase }: { wakeWord: WakeWordState & { enabled: boolean; toggle: () => void }; phrase: string }) {
+  if (!wakeWord.supported) return null;
+  return (
+    <button
+      type="button"
+      className={`btn btn-sm voice-btn${wakeWord.enabled ? " voice-btn-active" : ""}`}
+      onClick={wakeWord.toggle}
+      title={
+        wakeWord.enabled
+          ? `Wake word on — say "${phrase}" to start dictating hands-free. While on, the mic continuously streams audio to your browser's speech service, listening for that phrase. Click to turn off.`
+          : `Turn on hands-free activation — say "${phrase}" to start dictating without clicking the mic. While on, the mic continuously streams audio to your browser's speech service.`
+      }
+      aria-pressed={wakeWord.enabled}
+      aria-label={wakeWord.enabled ? "Turn off wake word" : "Turn on wake word"}
+    >
+      {wakeWord.enabled ? "👂" : "👂🏻"}
     </button>
   );
 }

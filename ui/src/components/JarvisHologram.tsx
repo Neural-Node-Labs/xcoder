@@ -14,6 +14,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * Usage:
  *   <JarvisHologram mood="ready" />
  *   <JarvisHologram mood="danger" size={160} label="Hostile contact" />
+ *   <JarvisHologram mood="ready" assistantName="Xcoder AI" thinking listening />
  *
  * Moods: "happy" | "sad" | "alert" | "ready" | "attack" | "danger"
  */
@@ -24,12 +25,32 @@ export interface JarvisHologramProps {
   mood: JarvisMood;
   /** Diameter in px of the hologram itself (the equalizer bars and label sit below it). Default 220. */
   size?: number;
-  /** Override the mood's default status text. Pass "" to show no text at all. */
+  /** Override the mood's default status text entirely. Pass "" to show no text at all. When
+   *  omitted, the default is built from assistantName + the mood's own label (e.g. "Xcoder AI
+   *  • Standing by") rather than just the mood label alone. */
   label?: string;
   /** Hide the status text row entirely (equivalent to label=""). Default false. */
   hideLabel?: boolean;
   /** Hides the voice-bar equalizer row entirely. Useful for very compact badge-style usage. */
   hideBars?: boolean;
+  /** Who this is, used in the default label and the aria-label. Default "Xcoder AI" — this is
+   *  the same configurable name as assistantName.ts elsewhere in xcoder, but this component
+   *  doesn't import that module (it stays dependency-free/portable to other projects); pass
+   *  useAssistantName()'s value in from the caller instead, as ChatPanel.tsx does. */
+  assistantName?: string;
+  /** Speeds up the rings/core/bars beyond whatever the mood alone would do — the same "actively
+   *  working on something" signal Hologram.tsx's old `thinking` prop gave, kept here so nothing
+   *  was lost by switching to this component. Layers on top of the mood, it doesn't replace it:
+   *  a "sad"+thinking hologram still looks sad, just visibly busier. */
+  thinking?: boolean;
+  /** Adds an outward-expanding "radar ping" ring — a distinct signal from mood/thinking, so
+   *  "I'm currently hearing you" doesn't get confused with "I'm currently processing" or with
+   *  whatever mood is active. Renders in a neutral white tone rather than the mood color for
+   *  exactly that reason. */
+  listening?: boolean;
+  /** Extra bottom padding in px, purely to reserve room so a tightly-clipping parent doesn't
+   *  crop the glow. Parity with Hologram.tsx's identical `bleed` prop. Default 0. */
+  bleed?: number;
   className?: string;
   style?: React.CSSProperties;
 }
@@ -157,11 +178,30 @@ function ensureStylesInjected() {
   document.head.appendChild(tag);
 }
 
-export function JarvisHologram({ mood, size = 220, label, hideLabel = false, hideBars = false, className, style }: JarvisHologramProps) {
+export function JarvisHologram({
+  mood,
+  size = 220,
+  label,
+  hideLabel = false,
+  hideBars = false,
+  assistantName = "Xcoder AI",
+  thinking = false,
+  listening = false,
+  bleed = 0,
+  className,
+  style,
+}: JarvisHologramProps) {
   useEffect(ensureStylesInjected, []);
 
   const profile = MOODS[mood];
   const scale = size / 220;
+
+  // "Thinking" layers a faster cadence on top of whatever the mood already set, rather than
+  // replacing it — a factor under 1 shortens each animation-duration, i.e. speeds it up.
+  const speedFactor = thinking ? 0.45 : 1;
+  const effectiveSpin = profile.spin * speedFactor;
+  const effectiveBreathe = profile.breathe * speedFactor;
+  const effectiveBarInterval = thinking ? Math.max(60, profile.barInterval * 0.5) : profile.barInterval;
 
   // Voice-bar equalizer: a plain CSS animation can't produce believable randomness, so this is
   // the one place JS drives the visuals directly — a small interval re-rolls target heights at
@@ -178,37 +218,44 @@ export function JarvisHologram({ mood, size = 220, label, hideLabel = false, hid
       setBarHeights(Array.from({ length: BAR_COUNT }, () => 0.12 + Math.random() * p.barCeiling));
     };
     tick();
-    const id = setInterval(tick, profile.barInterval);
+    const id = setInterval(tick, effectiveBarInterval);
     return () => clearInterval(id);
-    // Re-armed whenever the mood (and therefore its interval/ceiling) changes.
+    // Re-armed whenever the mood or thinking-driven interval changes.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mood]);
+  }, [mood, effectiveBarInterval]);
 
   const rootStyle = useMemo<React.CSSProperties>(
     () =>
       ({
         "--jh-primary": profile.primary,
         "--jh-secondary": profile.secondary,
-        "--jh-spin": `${profile.spin}s`,
-        "--jh-breathe": `${profile.breathe}s`,
+        "--jh-spin": `${effectiveSpin}s`,
+        "--jh-breathe": `${effectiveBreathe}s`,
         "--jh-intensity": profile.intensity,
         width: size,
+        paddingBottom: bleed,
         ...style,
       }) as React.CSSProperties,
-    [profile, size, style]
+    [profile, size, effectiveSpin, effectiveBreathe, bleed, style]
   );
 
-  const statusText = hideLabel ? "" : label ?? profile.label;
+  const statusText = hideLabel ? "" : label ?? `${assistantName} • ${profile.label}`;
 
   return (
     <div
       className={["jarvis-holo-root", profile.shake ? "jarvis-holo-root--shake" : "", className].filter(Boolean).join(" ")}
       style={rootStyle}
       role="img"
-      aria-label={`Hologram assistant — mood: ${mood}${statusText ? `, status: ${statusText}` : ""}`}
+      aria-label={`${assistantName} — mood: ${mood}${thinking ? ", processing" : ""}${listening ? ", listening" : ""}${statusText ? `, status: ${statusText}` : ""}`}
     >
       <div className="jarvis-holo-stage" style={{ width: 220 * scale, height: 220 * scale, transform: `scale(${scale})`, transformOrigin: "top left" }}>
         <div className="jarvis-holo-glow" />
+        {listening && (
+          <>
+            <div className="jarvis-holo-ping jarvis-holo-ping-1" />
+            <div className="jarvis-holo-ping jarvis-holo-ping-2" />
+          </>
+        )}
         <div className={`jarvis-holo-ring jarvis-holo-ring-1${profile.droop ? " jarvis-holo-ring--droop" : ""}${profile.blink ? " jarvis-holo-ring--blink" : ""}`} />
         <div className={`jarvis-holo-ring jarvis-holo-ring-2${profile.droop ? " jarvis-holo-ring--droop" : ""}`} />
         <div className="jarvis-holo-ring jarvis-holo-ring-3" />
@@ -301,6 +348,19 @@ const CSS = `
   animation-duration: var(--jh-spin), 0.5s;
   animation-timing-function: linear, steps(1);
   animation-iteration-count: infinite, infinite;
+}
+
+.jarvis-holo-ping {
+  position: absolute;
+  inset: 4px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.85);
+  opacity: 0;
+  animation: jarvis-holo-ping 1.8s ease-out infinite;
+}
+
+.jarvis-holo-ping-2 {
+  animation-delay: 0.9s;
 }
 
 .jarvis-holo-sweep {
@@ -433,6 +493,17 @@ const CSS = `
   50%,
   100% {
     opacity: 0.25;
+  }
+}
+
+@keyframes jarvis-holo-ping {
+  0% {
+    transform: scale(0.75);
+    opacity: 0.7;
+  }
+  100% {
+    transform: scale(1.15);
+    opacity: 0;
   }
 }
 

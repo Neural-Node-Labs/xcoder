@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api, ModelListResponse, Project } from "../api/client";
-import { Hologram } from "./Hologram";
 import { JarvisHologram, JarvisMood } from "./JarvisHologram";
+import { Halogram } from "./Halogram";
 import { useAssistantName } from "../assistantName";
-import { useSpeechRecognition, useSpeechSynthesis, useUiSounds } from "../hooks/useSpeech";
-import { VoiceButton, SpeakToggle, SoundToggle, InterimTranscript } from "./VoiceControls";
+import { useHologramStyle } from "../hologramStyle";
+import { useSpeechRecognition, useSpeechSynthesis, useUiSounds, useWakeWord } from "../hooks/useSpeech";
+import { VoiceButton, SpeakToggle, SoundToggle, WakeWordToggle, InterimTranscript } from "./VoiceControls";
 import { usePageActive } from "../context/PageActive";
 
 interface ChatMessage {
@@ -20,23 +21,44 @@ interface ChatMessage {
  * call — see ChatRequest/ChatResponse in src/api/types.ts), so this keeps the conversation
  * client-side and replays it as context on every turn.
  *
- * Laid out as a centered console with the Hologram standing in for the assistant (see
- * assistantName.ts — configurable in Settings, defaults to "Xcoder AI"; this used to be a
- * hardcoded "JARVIS" here and in the Hologram's default theme label, which is a trademarked
- * fictional name this app has no claim to) at the top. The
- * hologram is a presence indicator only: it shows whether the engine is idle or working, and
- * nothing else. It used to also type out a truncated copy of the latest reply, which meant
- * every answer appeared twice on screen — once clipped in the hologram, once in full in the
- * bubble right below it. The transcript is the one place replies live now.
+ * Laid out as a centered console with a hologram avatar standing in for the assistant at the
+ * top — which one renders is a Settings choice (see hologramStyle.ts): <Halogram> (a PNG-face
+ * design, the default) or <JarvisHologram> (an abstract CSS-only HUD with a voice-bar
+ * equalizer). Both take the same props, so this just picks which component runs rather than
+ * branching on props. Either way, the avatar carries three independent signals at once:
+ *   - mood: the LLM's own read on the conversation, set via set_mood_tool during a run (see
+ *     src/tools/moodTool.ts) and returned as ChatResponse.mood. Persists server-side per
+ *     workspace until the tool is called again — including across page loads and before the
+ *     very first message of a session, where it may already be non-default (a previous chat,
+ *     possibly from another browser tab, could have set it, or it's the workspace's first-ever
+ *     random pick — see moodTool.ts).
+ *   - thinking: true while a request is in flight — busier rings/core/bars, independent of mood.
+ *   - listening: true while speech recognition is active — a neutral radar-ping ring, so
+ *     "I'm hearing you" never gets confused with a mood color or with "thinking".
+ * assistantName (see assistantName.ts — configurable in Settings, defaults to "Xcoder AI") only
+ * feeds the default label text here; it used to be hardcoded as "JARVIS", a trademarked
+ * fictional name this app has no claim to.
  *
- * Alongside it sits a small <JarvisHologram> mood badge — a separate concept from the Hologram
- * above's `theme` (a fixed visual skin the user picks) and `status` (busy/idle wording): mood
- * is the LLM's own read on the conversation, set via set_mood_tool during the run (see
- * src/tools/moodTool.ts) and returned as ChatResponse.mood. It persists server-side per
- * workspace until the tool is called again, so this badge reflects whatever the *last* chat
- * response said the mood was — including on the very first message of a session, where that
- * mood may already be non-default (a previous chat, possibly from another browser tab, could
- * have set it, or it could be the workspace's first-ever random pick — see moodTool.ts).
+ * It used to also type out a truncated copy of the latest reply, which meant every answer
+ * appeared twice on screen — once clipped in the hologram, once in full in the bubble right
+ * below it. The transcript is the one place replies live now.
+ *
+ * Voice input has two opt-in "hands-free" behaviors layered on top of the base
+ * click-to-dictate/click-to-stop flow:
+ *   - Auto-submit on silence: dictation (useSpeechRecognition) is given
+ *     autoSubmitSilenceMs, so ~1.6s of silence after speaking auto-stops and sends — the
+ *     "anticipate the stop of my audio" behavior. This is on unconditionally; it's a small
+ *     convenience with no real downside (a click of the mic button still starts/stops it same
+ *     as before, this just adds a hands-off way to finish).
+ *   - Wake word (useWakeWord): fully opt-in via WakeWordToggle, off by default and NOT
+ *     persisted across reloads (deliberately — an always-listening mic silently resuming after
+ *     a refresh would be a bad surprise; re-enabling it is one click). While on, it passively
+ *     listens for the assistant's own name and starts dictation when heard. It's suspended
+ *     (enabled=false) whenever dictation is already listening, a request is busy, or the
+ *     assistant is speaking its reply out loud — the last one specifically so the mic doesn't
+ *     risk hearing its own TTS voice say its own name through open speakers and re-triggering
+ *     itself. See useWakeWord's doc comment for the bigger caveat: this streams audio to the
+ *     browser's speech service the entire time it's on, not just during actual dictation.
  */
 export function ChatPanel({ projects, visible = true }: { projects: Project[]; visible?: boolean }) {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -48,24 +70,44 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
   const [model, setModel] = useState("");
   const [mood, setMood] = useState<JarvisMood>("ready");
   const assistantName = useAssistantName();
+  const hologramStyle = useHologramStyle();
   const threadRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
   const synthesis = useSpeechSynthesis();
   const sounds = useUiSounds();
 
+  // This panel stays mounted while hidden (other page, or the Task tab) so the transcript
+  // survives — moved up here (ahead of the voice hooks below, which both read it) rather than
+  // computed right next to the effect that used to be its only reader.
+  const pageActive = usePageActive();
+  const shown = pageActive && visible;
+
   // Dictation appends to whatever is already typed rather than replacing it, so a user can
   // start typing, finish by voice, or dictate several sentences in a row.
   const onTranscript = useCallback((text: string) => {
     setInput((prev) => (prev ? `${prev.replace(/\s+$/, "")} ${text}` : text));
   }, []);
-  const recognition = useSpeechRecognition(onTranscript);
+  const recognition = useSpeechRecognition(onTranscript, {
+    autoSubmitSilenceMs: 1600,
+    // Reads the ref-backed `send` below via closure — always the current one, since this
+    // options object is passed fresh every render and the hook re-syncs its internal ref to it
+    // each time (see useSpeech.ts's optionsRef).
+    onSilence: () => send(),
+  });
 
-  // This panel stays mounted while hidden (other page, or the Task tab) so the transcript
-  // survives. Unmounting used to be what silenced speech output and released the mic; now that
-  // it doesn't happen implicitly, do it explicitly whenever the panel stops being on screen.
-  const pageActive = usePageActive();
-  const shown = pageActive && visible;
+  // Off by default and never persisted — see the doc comment above for why. Suspended whenever
+  // dictation is already active, a request is in flight, or the assistant is speaking its
+  // reply, so only one thing ever owns the microphone and TTS output can't re-trigger it.
+  const [wakeWordDesired, setWakeWordDesired] = useState(false);
+  const wakeWord = useWakeWord(assistantName, wakeWordDesired && shown && !recognition.listening && !busy && !synthesis.speaking, () => {
+    recognition.start();
+  });
+
+  // Unmounting used to be what silenced speech output and released the mic; now that it
+  // doesn't happen implicitly (the panel stays mounted while hidden — other page, or the Task
+  // tab — so the transcript survives), do it explicitly whenever the panel stops being on
+  // screen. `shown` itself is declared above, alongside the voice hooks that also read it.
   useEffect(() => {
     if (shown) return;
     synthesis.cancel();
@@ -164,23 +206,46 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
   return (
     <div className="jarvis-shell">
       <div className="jarvis-hologram-wrap">
-        <Hologram
-          size={320}
-          bleed={12}
-          status={busy ? "PROCESSING" : recognition.listening ? "LISTENING" : "ONLINE"}
-          thinking={busy}
-          showThemeSelector={false}
-          showReadout={false}
-          assistantName={assistantName}
-        />
+        {hologramStyle === "halogram" ? (
+          <Halogram
+            mood={mood}
+            size={220}
+            bleed={12}
+            thinking={busy}
+            listening={recognition.listening || wakeWord.listening}
+            assistantName={assistantName}
+            label={
+              busy
+                ? `${assistantName} • Processing`
+                : recognition.listening
+                  ? `${assistantName} • Listening`
+                  : wakeWord.listening
+                    ? `${assistantName} • Say "${assistantName}" to talk`
+                    : undefined
+            }
+          />
+        ) : (
+          <JarvisHologram
+            mood={mood}
+            size={220}
+            bleed={12}
+            thinking={busy}
+            listening={recognition.listening || wakeWord.listening}
+            assistantName={assistantName}
+            label={
+              busy
+                ? `${assistantName} • Processing`
+                : recognition.listening
+                  ? `${assistantName} • Listening`
+                  : wakeWord.listening
+                    ? `${assistantName} • Say "${assistantName}" to talk`
+                    : undefined
+            }
+          />
+        )}
       </div>
 
       <div className="jarvis-meta-row">
-        <div className="jarvis-mood-badge" title={`Assistant mood: ${mood} — set by the LLM via set_mood_tool; persists until it calls that tool again.`}>
-          <JarvisHologram mood={mood} size={40} hideLabel hideBars />
-          <span style={{ textTransform: "capitalize" }}>{mood}</span>
-        </div>
-
         {projects.length > 0 && (
           <select value={projectId} onChange={(e) => setProjectId(e.target.value)} aria-label="Project">
             <option value="">(active project / server cwd)</option>
@@ -220,6 +285,7 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
 
         <SpeakToggle synthesis={synthesis} />
         <SoundToggle sounds={sounds} />
+        <WakeWordToggle wakeWord={{ ...wakeWord, enabled: wakeWordDesired, toggle: () => setWakeWordDesired((v) => !v) }} phrase={assistantName} />
       </div>
 
       <div className="jarvis-body">
