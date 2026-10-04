@@ -16,8 +16,6 @@ function ensureStylesInjected() {
   tag.textContent = CSS;
   document.head.appendChild(tag);
 }
-ensureStylesInjected();
-
 export interface HalogramShellProps extends HologramProps {
   containerRef: RefObject<HTMLDivElement>;
   defaultLabel: string;
@@ -140,3 +138,6 @@ const CSS = `
   }
 }
 `;
+
+// Must run after `const CSS` above is initialised (calling it earlier is a temporal-dead-zone error in the bundle).
+ensureStylesInjected();
