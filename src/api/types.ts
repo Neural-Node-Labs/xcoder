@@ -48,6 +48,22 @@ export interface ChatRequest {
    *  different one would leave the caller believing they got what they asked for. Validated
    *  server-side against the models the server can actually offer — see ollamaModels.ts. */
   model?: string;
+  /** Optional (sdlc engine only): explicit intake signals + untrusted evidence. Lets a caller say
+   *  "this is a defect / failing test / failed deployment / UI-UX design to implement" and attach
+   *  the failing test output, deploy log, defect report or design spec. Validated server-side:
+   *  flags must be booleans, evidence is capped at 50,000 chars and is only ever treated as data. */
+  intake?: {
+    hasCode?: boolean;
+    hasDefect?: boolean;
+    hasDesign?: boolean;
+    hasUiDesign?: boolean;
+    hasFailedTest?: boolean;
+    hasFailedDeployment?: boolean;
+    evidence?: string;
+  };
+  /** Optional (sdlc engine only): resume a halted/cancelled run from its checkpoint (task id as
+   *  reported in the halted run's result). Completed stages are skipped. */
+  resumeTaskId?: string;
 }
 
 /** POST /api/v1/chat response data. */

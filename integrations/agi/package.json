@@ -1,0 +1,22 @@
+{
+  "name": "agi-devops",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Goal-driven, self-evolving LLM agent harness for DevOps, with isolated sandbox",
+  "scripts": {
+    "build": "tsc -p tsconfig.json && node scripts/assets.mjs",
+    "start": "node dist/kernel/supervisor.js"
+  },
+  "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.57.0",
+    "@opentelemetry/sdk-node": "^0.57.0",
+    "@opentelemetry/sdk-trace-base": "^1.30.0",
+    "express": "^4.21.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.21",
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}

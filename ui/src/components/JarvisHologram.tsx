@@ -1,15 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import type { HologramProps, JarvisMood } from "./holograms/types";
+
+export type { JarvisMood };
 
 /**
  * <JarvisHologram /> — a self-contained, mood-reactive HUD hologram avatar.
  *
- * Fully portable: the only dependency is React. All of its CSS (rings, core glow, radar sweep,
+ * The only *runtime* dependency is React — all of its CSS (rings, core glow, radar sweep,
  * orbiting particles, voice-bar equalizer, keyframes) is injected once into <head> the first
  * time this component mounts anywhere on the page — there's no separate .css file to import,
  * no build-step config, no CSS variables assumed to already exist on the page (unlike, say,
  * XcoderLogo.tsx, which deliberately reads *this* app's --cyan/--bg-* theme tokens — this
- * component defines its own palette per mood instead, precisely so it can be copied into any
- * other React project and just work).
+ * component defines its own palette per mood instead). It does import its prop *types* from
+ * ./holograms/types.ts — the shared contract every selectable hologram kind implements (see
+ * ../hologramRegistry.ts) — so copying just this one file to another project also means
+ * copying that ~30-line types file (or inlining the two type definitions by hand); nothing
+ * about the actual rendering/animation logic below depends on anything outside this file.
  *
  * Usage:
  *   <JarvisHologram mood="ready" />
@@ -19,40 +25,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * Moods: "happy" | "sad" | "alert" | "ready" | "attack" | "danger"
  */
 
-export type JarvisMood = "happy" | "sad" | "alert" | "ready" | "attack" | "danger";
-
-export interface JarvisHologramProps {
-  mood: JarvisMood;
-  /** Diameter in px of the hologram itself (the equalizer bars and label sit below it). Default 220. */
-  size?: number;
-  /** Override the mood's default status text entirely. Pass "" to show no text at all. When
-   *  omitted, the default is built from assistantName + the mood's own label (e.g. "Xcoder AI
-   *  • Standing by") rather than just the mood label alone. */
-  label?: string;
-  /** Hide the status text row entirely (equivalent to label=""). Default false. */
-  hideLabel?: boolean;
-  /** Hides the voice-bar equalizer row entirely. Useful for very compact badge-style usage. */
+export interface JarvisHologramProps extends HologramProps {
+  /** Hides the voice-bar equalizer row entirely. Useful for very compact badge-style usage.
+   *  Not part of the shared HologramProps contract — only this component has an equalizer. */
   hideBars?: boolean;
-  /** Who this is, used in the default label and the aria-label. Default "Xcoder AI" — this is
-   *  the same configurable name as assistantName.ts elsewhere in xcoder, but this component
-   *  doesn't import that module (it stays dependency-free/portable to other projects); pass
-   *  useAssistantName()'s value in from the caller instead, as ChatPanel.tsx does. */
-  assistantName?: string;
-  /** Speeds up the rings/core/bars beyond whatever the mood alone would do — the same "actively
-   *  working on something" signal Hologram.tsx's old `thinking` prop gave, kept here so nothing
-   *  was lost by switching to this component. Layers on top of the mood, it doesn't replace it:
-   *  a "sad"+thinking hologram still looks sad, just visibly busier. */
-  thinking?: boolean;
-  /** Adds an outward-expanding "radar ping" ring — a distinct signal from mood/thinking, so
-   *  "I'm currently hearing you" doesn't get confused with "I'm currently processing" or with
-   *  whatever mood is active. Renders in a neutral white tone rather than the mood color for
-   *  exactly that reason. */
-  listening?: boolean;
-  /** Extra bottom padding in px, purely to reserve room so a tightly-clipping parent doesn't
-   *  crop the glow. Parity with Hologram.tsx's identical `bleed` prop. Default 0. */
-  bleed?: number;
-  className?: string;
-  style?: React.CSSProperties;
 }
 
 interface MoodProfile {

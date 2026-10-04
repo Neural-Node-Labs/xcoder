@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createRouter } from "./routes.js";
 import { codegraphProxyMiddleware } from "./codegraphProxy.js";
 import { CODEGRAPH_UI_DIST, autoConnectFromEnv } from "./codegraphProcess.js";
+import { initOpenTelemetry } from "../telemetry/otel.js";
 // Auth is always enabled — no more static admin credentials
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -32,6 +33,8 @@ const DEFAULT_HOST = "0.0.0.0";
  * Returns the server instance so the caller can close it (e.g. for testing or graceful shutdown).
  */
 export function startApiServer(opts: ApiServerOptions = {}): import("http").Server {
+  // OpenTelemetry (no-op unless XCODER_OTEL_ENABLED / OTEL_EXPORTER_OTLP_ENDPOINT is set). Never throws.
+  const otelShutdown = initOpenTelemetry();
   const port = parseInt(process.env.XCODER_API_PORT ?? String(opts.port ?? DEFAULT_PORT), 10);
   const host = process.env.XCODER_API_HOST ?? opts.host ?? DEFAULT_HOST;
 
@@ -66,6 +69,45 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
     .map((o) => o.trim())
     .filter(Boolean);
   app.use(cors(corsOrigins.length > 0 ? { origin: corsOrigins } : { origin: false }));
+
+  // Security headers — applied to every response this process serves directly: the JSON API,
+  // and (standalone/no-Docker deployments only — see STANDALONE.md) the dashboard's static
+  // files and SPA fallback below, since there's no nginx in front to add them in that case. The
+  // Docker deployment's nginx (ui/nginx.conf) sets the identical policy itself for its own
+  // static responses — keep the two in sync if this ever changes.
+  //
+  // The CSP's script-src/style-src/connect-src/frame-src carve-outs for accounts.google.com are
+  // exactly what Google's own Identity Services docs specify for a CSP-protected page
+  // (https://developers.google.com/identity/gsi/web/guides/client-library#content_security_policy)
+  // — harmless and unused when XCODER_GOOGLE_CLIENT_ID isn't set (LoginPage.tsx only loads that
+  // script when it is). Cross-Origin-Opener-Policy is relaxed to same-origin-allow-popups
+  // rather than left at the (stricter) default specifically because Google's own sign-in popup
+  // flow needs to talk back to the window that opened it — omitting this breaks that flow
+  // silently (the popup opens but the result never reaches the page), the same way a CSP
+  // mistake here would; both are the kind of failure that won't show up in an automated test
+  // but is immediately obvious in a real browser, so smoke-test login by hand after deploying.
+  app.use((_req, res, next) => {
+    res.setHeader(
+      "Content-Security-Policy",
+      [
+        "default-src 'self'",
+        "script-src 'self' https://accounts.google.com/gsi/client",
+        "style-src 'self' 'unsafe-inline' https://accounts.google.com/gsi/style https://fonts.googleapis.com",
+        "connect-src 'self' https://accounts.google.com/gsi/",
+        "frame-src 'self' https://accounts.google.com/gsi/",
+        "font-src 'self' https://fonts.gstatic.com",
+        "img-src 'self' data:",
+        "object-src 'none'",
+        "base-uri 'self'",
+        "frame-ancestors 'self'",
+      ].join("; ")
+    );
+    res.setHeader("X-Content-Type-Options", "nosniff");
+    res.setHeader("X-Frame-Options", "SAMEORIGIN");
+    res.setHeader("Referrer-Policy", "same-origin");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin-allow-popups");
+    next();
+  });
 
   // Embedded CodeGraph Explorer (integrations/codegraph/codegraph-ui, built to dist/) and its
   // API proxy. Mounted BEFORE express.json() so proxied requests — including large project .zip
@@ -119,7 +161,7 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
     res.status(500).json({ success: false, error: "Internal server error" });
   });
 
-  const server = app.listen(port, host, () => {
+  const server: import("http").Server = app.listen(port, host, () => {
     console.log(`[xcoder API] Listening on http://${host}:${port}`);
     if (fs.existsSync(uiIndexHtml)) {
       console.log(`[xcoder UI] Dashboard: http://${host}:${port}/`);
@@ -154,6 +196,8 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
     console.log(`[xcoder API] Auth: Token-based authentication active. First user to register becomes admin.`);
   });
 
+  // Flush pending spans/metrics when the server closes.
+  server.on("close", () => { void otelShutdown.then((shutdown) => shutdown()).catch(() => {}); });
   return server;
 }
 

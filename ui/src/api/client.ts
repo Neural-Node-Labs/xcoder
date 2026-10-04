@@ -364,7 +364,101 @@ export interface TelemetryEntry {
 
 // ─── Auth ───────────────────────────────────────────────────────────────────────
 
+
+// ─── AGI DevOps harness (gateway: src/api/agiProxy.ts) ───────────────────────────────────
+
+export interface AgiStatus {
+  configured: boolean;
+  /** Present when configured. false = the AGI service didn't answer. */
+  reachable?: boolean;
+  isAdmin: boolean;
+  error?: string;
+  release?: string;
+  genome?: string;
+  probation?: "n/a" | "pending" | "pass" | "fail";
+  llmMode?: "mock" | "anthropic";
+  sandbox?: boolean;
+  killed?: boolean;
+  busy?: number;
+  skills?: number;
+}
+export interface AgiChatResult {
+  answer: string;
+  status: string;
+  steps: number;
+  tokens: number;
+  seconds: number;
+  violations: unknown[];
+}
+export interface AgiKpi { name: string; direction: "max" | "min"; target: number; current?: number; suite: string }
+export interface AgiGoal { statement: string; autonomy: 0 | 1 | 2 | 3; constraints: string[]; kpis: AgiKpi[] }
+export interface AgiSkill { name: string; description: string; uses: number }
+export interface AgiApproval { id: string; runId: string; tool: string; args: unknown; reason: string; prediction?: { predicted?: string; risk?: string; reversible?: boolean }; createdAt: number }
+export interface AgiGate { name: string; pass: boolean; detail: string }
+export interface AgiEvolution {
+  id: string; status: string; tier: string; targetKpi: string; baseVersion: string; rationale: string;
+  baselineScore?: number; candidateScore?: number; gates: AgiGate[]; note?: string;
+}
+
+/** Reads the AGI activity stream (SSE). Uses fetch() instead of EventSource because EventSource
+ *  can't send the Authorization header — this keeps the stream behind the normal bearer auth
+ *  rather than putting a token in a URL. Resolves when the stream ends or `signal` aborts. */
+async function streamAgiEvents(onEvent: (e: unknown) => void, signal: AbortSignal, onOpen?: () => void): Promise<void> {
+  const headers: Record<string, string> = { Accept: "text/event-stream" };
+  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+  const res = await fetch(`${BASE}/agi/events`, { headers, signal });
+  if (!res.ok || !res.body) throw new Error(`AGI event stream unavailable (HTTP ${res.status})`);
+  onOpen?.();
+  const reader = res.body.getReader();
+  const dec = new TextDecoder();
+  let buf = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    buf += dec.decode(value, { stream: true });
+    let i: number;
+    while ((i = buf.indexOf("\n\n")) >= 0) {
+      const frame = buf.slice(0, i);
+      buf = buf.slice(i + 2);
+      for (const line of frame.split("\n")) {
+        if (!line.startsWith("data:")) continue; // ": ka" keep-alives and other fields are ignored
+        try {
+          onEvent(JSON.parse(line.slice(5).trim()));
+        } catch {
+          /* malformed frame: skip, never kill the stream */
+        }
+      }
+    }
+  }
+}
+
+export interface AgiSchedule {
+  enabled: boolean; everyMinutes: number; dailyTokens: number; reset: "daily" | "rolling"; tzOffsetMin: number;
+  state: "off" | "idle" | "running" | "waiting-allowance" | "blocked"; blockedReason: string | null;
+  usedTokens: number; remainingTokens: number; refillsAt: number | null; nextRunAt: number | null;
+  lastRun: { at: number; outcome: string; tokens: number; ok: boolean } | null; lastError: string | null; now: number;
+}
+export type AgiSchedulePatch = Partial<Pick<AgiSchedule, "enabled" | "everyMinutes" | "dailyTokens" | "reset" | "tzOffsetMin">>;
+
 export const api = {
+  agiStatus: () => get<AgiStatus>("/agi/status"),
+  agiChat: (message: string, history: Array<{ role: "user" | "agent"; text: string }>) => post<AgiChatResult>("/agi/chat", { message, history }),
+  agiGoal: () => get<AgiGoal>("/agi/goal"),
+  agiSetGoal: (patch: { statement?: string; autonomy?: number }) => put<AgiGoal>("/agi/goal", patch),
+  agiSchedule: () => get<AgiSchedule>("/agi/schedule"),
+  agiSetSchedule: (patch: AgiSchedulePatch) => put<AgiSchedule>("/agi/schedule", patch),
+  agiSkills: () => get<AgiSkill[]>("/agi/skills"),
+  agiRecent: () => get<unknown[]>("/agi/recent"),
+  agiApprovals: () => get<AgiApproval[]>("/agi/approvals"),
+  agiDecide: (id: string, decision: "approve" | "deny") => post<{ ok: boolean }>(`/agi/approvals/${encodeURIComponent(id)}/${decision}`),
+  agiEvolutions: () => get<{ running: boolean; items: AgiEvolution[] }>("/agi/evolutions"),
+  agiPropose: () => post<{ started: boolean }>("/agi/evolutions/propose"),
+  agiEvolutionDecide: (id: string, decision: "approve" | "reject") => post<unknown>(`/agi/evolutions/${encodeURIComponent(id)}/${decision}`),
+  agiMeasure: () => post<unknown>("/agi/goal/measure"),
+  agiPractice: () => post<unknown>("/agi/goal/practice"),
+  agiKill: () => post<{ killed: boolean }>("/agi/kill"),
+  agiKillReset: () => post<{ killed: boolean }>("/agi/kill/reset"),
+  agiStream: streamAgiEvents,
   login: (username: string, password: string) => post<LoginResponse>("/login", { username, password }),
   logout: () => post<void>("/logout"),
   register: (username: string, password: string) => post<LoginResponse>("/register", { username, password }),

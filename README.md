@@ -33,6 +33,9 @@ so run the API server first (or via `--ui`, which starts both).
 docker compose up --build
 ```
 
+The bundled AGI DevOps agent (UI → Run a task → **AGI**) starts with it by default, with its own isolated sandbox and
+auto-generated secrets; see `integrations/agi/XCODER_INTEGRATION.md` (including how to turn it off).
+
 This starts four containers:
 
 | Service    | Description                                         | Port |

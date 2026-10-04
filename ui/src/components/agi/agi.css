@@ -1,0 +1,59 @@
+/* AGI tab — scoped under .agi-*; colours come from the app theme variables so it follows Settings → Theme. */
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.agi-panel { flex-direction: column; gap: 10px; min-height: 0; }
+.agi-header { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.agi-grow { flex: 1; }
+.agi-dim { color: rgba(var(--cyan-rgb), 0.55); font-size: 12px; }
+.agi-note { border: 1px solid var(--border); border-radius: var(--radius); padding: 6px 10px; font-size: 12px; }
+.agi-note-error { border-color: var(--red); color: var(--red); }
+.agi-grid { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(340px, 1.2fr); gap: 12px; min-height: 420px; }
+.agi-grid-single { grid-template-columns: minmax(300px, 1fr) minmax(260px, 0.8fr); }
+@media (max-width: 900px) { .agi-grid, .agi-grid-single { grid-template-columns: 1fr; } }
+.agi-left, .agi-right { display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--border); border-radius: var(--radius); background: var(--glass); }
+.agi-right { padding: 0; }
+.agi-grid-single .agi-right { padding: 12px; }
+.agi-chat { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.agi-msgs { flex: 1; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; max-height: 520px; }
+.agi-msg-user { align-self: flex-end; max-width: 85%; }
+.agi-msg-agent { align-self: flex-start; max-width: 92%; }
+.agi-bubble { border: 1px solid var(--border); border-radius: var(--radius); padding: 8px 12px; white-space: pre-wrap; word-break: break-word; background: rgba(var(--cyan-rgb), 0.05); }
+.agi-msg-user .agi-bubble { background: var(--accent-dim); border-color: var(--border-hover); }
+.agi-bubble-error { border-color: var(--red); color: var(--red); }
+.agi-meta { font-size: 11px; opacity: 0.6; margin: 2px 6px; }
+.agi-inputrow { display: flex; gap: 8px; padding: 10px; border-top: 1px solid var(--border); }
+.agi-inputrow input { flex: 1; }
+.agi-tabs { display: flex; border-bottom: 1px solid var(--border); }
+.agi-tab { background: none; border: 0; border-bottom: 2px solid transparent; color: inherit; opacity: 0.6; padding: 8px 14px; cursor: pointer; font: inherit; }
+.agi-tab-active { opacity: 1; border-bottom-color: var(--accent); }
+.agi-tab:focus-visible, .agi-span:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.agi-tabpanel { flex: 1; overflow: auto; padding: 12px; max-height: 560px; }
+.agi-toolbar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 8px 0; font-size: 12px; }
+.agi-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.agi-span { display: flex; gap: 8px; width: 100%; text-align: left; background: none; border: 0; color: inherit; padding: 2px 4px; cursor: pointer; font: 12px var(--mono); border-radius: 3px; }
+.agi-span:hover { background: var(--accent-dim); }
+.agi-nm { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.agi-ms { opacity: 0.55; }
+.agi-span-ok .agi-ic { color: var(--green); } .agi-span-err .agi-ic { color: var(--red); } .agi-span-run .agi-ic { color: var(--amber); }
+.agi-tag { font-size: 10px; padding: 0 6px; border-radius: 3px; }
+.agi-tag-deny { background: var(--red); color: #000; } .agi-tag-approve { background: var(--amber); color: #000; }
+.agi-pre { margin: 4px 0; white-space: pre-wrap; word-break: break-all; font: 11px var(--mono); }
+.agi-attrs { background: rgba(var(--cyan-rgb), 0.05); padding: 8px; overflow: auto; max-height: 200px; border-radius: 4px; }
+.agi-table { width: 100%; border-collapse: collapse; }
+.agi-table td, .agi-table th { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--border); }
+.agi-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; }
+.agi-dot-good { background: var(--green); } .agi-dot-mid { background: var(--amber); } .agi-dot-bad { background: var(--red); } .agi-dot-na { background: #555; }
+.agi-goal { font-style: italic; }
+.agi-h { margin: 14px 0 4px; }
+.agi-card-warn { border-color: var(--amber); }
+.agi-approvals { padding: 8px 12px 0; }
+.agi-evo { display: flex; flex-direction: column; gap: 4px; }
+.agi-gate-pass { color: var(--green); } .agi-gate-fail { color: var(--red); }
+.agi-status-promoted { background: var(--green); color: #000; }
+.agi-status-rejected, .agi-status-rolled_back, .agi-status-failed { background: var(--red); color: #000; }
+.agi-status-awaiting_approval, .agi-status-promoting, .agi-status-testing { background: var(--amber); color: #000; }
+.agi-setup pre { margin: 8px 0; }
+
+.agi-meter { height: 8px; border: 1px solid rgba(var(--cyan-rgb), 0.4); margin: 10px 0 4px; }
+.agi-meter-fill { height: 100%; background: rgba(var(--cyan-rgb), 0.8); transition: width .3s; }
+.agi-form { display: grid; gap: 10px; max-width: 420px; font-size: 12px; }
+.agi-form label { display: grid; gap: 4px; }

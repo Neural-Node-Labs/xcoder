@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
+import { assertSafeGlob } from "./safeGlob.js";
 import { Project, SyntaxKind } from "ts-morph";
 import { loadIgnoreRules } from "../indexing/ignoreRules.js";
 import { CEILINGS, isTsJsFile, truncateActionable, resolveWorkspacePath } from "./fsToolUtils.js";
@@ -70,7 +71,7 @@ export async function searchAstTool(
   args: { query: string; pathGlob?: string },
   cwd: string = process.cwd()
 ): Promise<SearchAstResult> {
-  const files = await fg(args.pathGlob ?? "**/*.{ts,tsx,js,jsx,mjs,cjs}", {
+  const files = await fg(assertSafeGlob(args.pathGlob ?? "**/*.{ts,tsx,js,jsx,mjs,cjs}"), {
     cwd,
     ignore: loadIgnoreRules(cwd),
     dot: false,

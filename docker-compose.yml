@@ -35,6 +35,10 @@ services:
       # Blocks startup until the default model is actually pulled — see ollama-pull-model.
       ollama-pull-model:
         condition: service_completed_successfully
+      # The AGI secret must exist before the gateway first reads it. agi itself is NOT a dependency:
+      # xcoder starts and works the same whether or not the agent is up (the AGI tab shows "unreachable").
+      agi-init:
+        condition: service_completed_successfully
       # No depends_on entry for codegraph-api here, even though the environment below points at
       # it — CodeGraph is a sibling service (see codegraph-api further down) and xcoder's core
       # API must come up the same way whether or not it is running, whether the
@@ -68,7 +72,14 @@ services:
       XCODER_CODEGRAPH_URL: http://codegraph-api:8000
       XCODER_CODEGRAPH_ADMIN_PASSWORD: ${CODEGRAPH_ADMIN_PASSWORD:-codegraph_admin_pass}
       XCODER_CODEGRAPH_MCP_URL: http://codegraph-mcp:8900/mcp
+      # AGI DevOps agent (bundled, on by default). xcoder's authenticated /api/v1/agi/* gateway is the only
+      # way to reach it. The shared secret is generated once by agi-init into the agi_secrets volume (or taken
+      # from AGI_API_TOKEN in .env) and read from that file. To turn the feature off set XCODER_AGI_URL=off
+      # and run with: --scale agi=0 --scale agi-sandbox=0 --scale agi-jaeger=0 --scale agi-init=0
+      XCODER_AGI_URL: ${XCODER_AGI_URL:-http://agi:7000}
+      XCODER_AGI_TOKEN_FILE: /secrets/agi_api_token
     volumes:
+      - agi_secrets:/secrets:ro
       # Bakes in agent/config/llm.yaml (Ollama by default) — the Dockerfile doesn't COPY
       # agent/ into the image, so without this mount the container falls back to the
       # DeepSeek default compiled into loadConfig.ts.
@@ -239,7 +250,126 @@ services:
           memory: 256M
 
 
+  # ─── AGI DevOps agent (bundled, on by default) ────────────────────────────────
+  # Isolation model (full table: integrations/agi/UPSTREAM_README.md):
+  #   agi         agent + root supervisor. Has egress (LLM API) but executes NOTHING itself.
+  #   agi-sandbox ALL command execution. `internal: true` network = no internet, no route to the host.
+  #   Neither publishes a host port: the only way in is xcoder's authenticated /api/v1/agi/* gateway.
+  # Defaults to the offline scripted "mock" model (AGI_LLM_MODE=anthropic + ANTHROPIC_API_KEY for a real one).
+  # Autonomous mode (token-capped loop) is OFF until an admin starts it in the UI (AGI > Schedule).
+
+  # One-shot: creates the two shared secrets on first start (random, 192-bit) and keeps them across restarts.
+  # AGI_API_TOKEN / SANDBOX_TOKEN in .env override the generated value (16+ chars).
+  agi-init:
+    image: alpine:3.20
+    restart: "no"
+    environment:
+      AGI_API_TOKEN: ${AGI_API_TOKEN:-}
+      SANDBOX_TOKEN: ${SANDBOX_TOKEN:-}
+    volumes:
+      - agi_secrets:/secrets
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        set -eu
+        put() {
+          n="$$1"; v="$$2"; f="/secrets/$$n"
+          if [ -n "$$v" ]; then
+            [ "$$(printf %s "$$v" | wc -c)" -ge 16 ] || { echo "$$n: supplied value must be at least 16 characters" >&2; exit 1; }
+            printf %s "$$v" > "$$f"
+          elif [ ! -s "$$f" ]; then
+            head -c 24 /dev/urandom | od -An -tx1 | tr -d ' \n' > "$$f"
+          fi
+          chmod 444 "$$f"
+        }
+        put agi_api_token "$$AGI_API_TOKEN"
+        put sandbox_token "$$SANDBOX_TOKEN"
+        echo "agi secrets ready"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.1"
+          memory: 16M
+
+  agi:
+    build: ./integrations/agi
+    restart: unless-stopped
+    environment:
+      REQUIRE_API_TOKEN: "1"                 # refuse to start with a missing/placeholder secret
+      AGI_API_TOKEN_FILE: /secrets/agi_api_token
+      SANDBOX_TOKEN_FILE: /secrets/sandbox_token
+      SANDBOX_URL: http://agi-sandbox:9000
+      LLM_MODE: ${AGI_LLM_MODE:-mock}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://agi-jaeger:4318
+      EVOLVE_APPROVAL: ${EVOLVE_APPROVAL:-prompts}
+      EVOLVE_EPSILON: ${EVOLVE_EPSILON:-}
+      PROBATION_SECONDS: ${PROBATION_SECONDS:-90}
+      MODEL_EASY: ${MODEL_EASY:-}
+      MODEL_MEDIUM: ${MODEL_MEDIUM:-}
+      MODEL_HARD: ${MODEL_HARD:-}
+    volumes:
+      - agi_data:/data
+      - agi_secrets:/secrets:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,size=64m"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, SETUID, SETGID]         # only so the supervisor can drop the agent to uid 1001
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 512
+    mem_limit: 1g
+    networks: [default, agi_sandbox_net]
+    depends_on:
+      agi-init: { condition: service_completed_successfully }
+      agi-sandbox: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7000/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 10s
+
+  agi-sandbox:
+    build: ./integrations/agi/sandbox
+    restart: unless-stopped
+    environment:
+      SANDBOX_TOKEN_FILE: /secrets/sandbox_token
+    volumes:
+      - agi_secrets:/secrets:ro
+    user: "2000:2000"
+    read_only: true
+    tmpfs:
+      - /work:rw,size=256m,mode=1777         # ephemeral workspace, wiped on restart
+      - /tmp:rw,size=32m,mode=1777
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    pids_limit: 256
+    mem_limit: 512m
+    cpus: 1.0
+    networks: [agi_sandbox_net]              # internal only: NO internet, NO route to the host
+    depends_on:
+      agi-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/healthz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # OpenTelemetry backend for the AGI agent's traces: http://localhost:16686 (bound to loopback).
+  agi-jaeger:
+    image: jaegertracing/all-in-one:1.62.0
+    restart: unless-stopped
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+    ports: ["127.0.0.1:16686:16686"]
+
+networks:
+  agi_sandbox_net:
+    internal: true                           # Docker blocks all external traffic on this network
+
 volumes:
   xcoder-postgres-data:
   xcoder-codegraph-data:
   ollama_storage:
+  agi_data:
+  agi_secrets:

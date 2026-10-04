@@ -1,7 +1,7 @@
 {
   "name": "xcoder",
   "version": "0.1.0",
-  "description": "xcoder — a DAG-based SDLC orchestration agent. Ships with a ReAct CLI, an HTTP API, and a web dashboard, with hot-pluggable role skills and a Validation Gate that never trusts a sub-agent's own self-report.",
+  "description": "xcoder \u2014 a DAG-based SDLC orchestration agent. Ships with a ReAct CLI, an HTTP API, and a web dashboard, with hot-pluggable role skills and a Validation Gate that never trusts a sub-agent's own self-report.",
   "type": "module",
   "bin": {
     "xcoder": "dist/cli/index.js"
@@ -23,10 +23,20 @@
     "db:init": "node dist/cli/index.js --initialize-db",
     "codegraph:install": "python3 -m venv integrations/codegraph/codegraph/.venv && integrations/codegraph/codegraph/.venv/bin/pip install -r integrations/codegraph/codegraph/requirements.txt -r integrations/codegraph/codegraph-mcp/requirements.txt",
     "codegraph:ui:build": "cd integrations/codegraph/codegraph-ui && npm install && npm run build -- --base=/codegraph-ui/",
-    "build:standalone": "bash scripts/build-standalone.sh"
+    "build:standalone": "bash scripts/build-standalone.sh",
+    "scenarios": "tsx src/test/runSdlcScenarios.ts",
+    "smoke:otlp": "tsx src/test/otlpSmoke.ts"
   },
   "dependencies": {
-    "adm-zip": "^0.5.16",
+    "@opentelemetry/api": "^1.9.1",
+    "@opentelemetry/exporter-metrics-otlp-http": "^0.222.0",
+    "@opentelemetry/exporter-trace-otlp-http": "^0.222.0",
+    "@opentelemetry/resources": "^2.11.0",
+    "@opentelemetry/sdk-metrics": "^2.11.0",
+    "@opentelemetry/sdk-trace-base": "^2.11.0",
+    "@opentelemetry/sdk-trace-node": "^2.11.0",
+    "@opentelemetry/semantic-conventions": "^1.43.0",
+    "adm-zip": "^0.6.1",
     "archiver": "^7.0.1",
     "bcryptjs": "^2.4.3",
     "cheerio": "^1.0.0",
@@ -44,7 +54,6 @@
     "typescript": "^5.6.3"
   },
   "devDependencies": {
-    "@types/adm-zip": "^0.5.7",
     "@types/archiver": "^6.0.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/cors": "^2.8.17",

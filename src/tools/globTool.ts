@@ -1,9 +1,10 @@
 import fg from "fast-glob";
+import { assertSafeGlob } from "./safeGlob.js";
 import { loadIgnoreRules } from "../indexing/ignoreRules.js";
 
 export async function globTool(pattern: string, cwd: string = process.cwd()): Promise<string[]> {
   const ignore = loadIgnoreRules(cwd);
-  return fg(pattern, { cwd, ignore, dot: false, onlyFiles: true });
+  return fg(assertSafeGlob(pattern), { cwd, ignore, dot: false, onlyFiles: true });
 }
 
 
