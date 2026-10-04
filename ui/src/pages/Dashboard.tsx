@@ -3,6 +3,7 @@ import { usePageActive, useOnActivate } from "../context/PageActive";
 import { api, ChatResponse, EnginesResponse, Project } from "../api/client";
 import { HealthScore } from "../components/Badges";
 import { ChatPanel } from "../components/ChatPanel";
+import { AgiPanel } from "../components/agi/AgiPanel";
 import { useSpeechRecognition, useSpeechSynthesis, useUiSounds } from "../hooks/useSpeech";
 import { VoiceButton, SpeakToggle, SoundToggle, InterimTranscript } from "../components/VoiceControls";
 
@@ -29,11 +30,13 @@ function spokenStatusFor(run: RunState): string | null {
 }
 
 export function Dashboard() {
-  const [tab, setTab] = useState<"task" | "chat">("task");
+  const [tab, setTab] = useState<"task" | "chat" | "agi">("task");
   // Chat mounts the first time it's opened and then stays mounted (hidden) when you switch to the
   // Task tab — its transcript lives in ChatPanel's own state, so unmounting it wiped the
   // conversation every time you toggled tabs.
   const [chatOpened, setChatOpened] = useState(false);
+  // Same keep-mounted-once-opened treatment for the AGI tab, so its conversation survives tab switches.
+  const [agiOpened, setAgiOpened] = useState(false);
   const pageActive = usePageActive();
   const [task, setTask] = useState("");
   const [engines, setEngines] = useState<EnginesResponse | null>(null);
@@ -162,14 +165,19 @@ export function Dashboard() {
         <button className={`btn btn-sm ${tab === "chat" ? "btn-primary" : "btn-ghost"}`} onClick={() => { setTab("chat"); setChatOpened(true); }}>
           💬 Chat
         </button>
+        <button className={`btn btn-sm ${tab === "agi" ? "btn-primary" : "btn-ghost"}`} onClick={() => { setTab("agi"); setAgiOpened(true); }}>
+          🧠 AGI
+        </button>
       </div>
+
+      {agiOpened && <AgiPanel visible={tab === "agi"} />}
 
       {chatOpened && (
         <div style={{ display: tab === "chat" ? "contents" : "none" }}>
           <ChatPanel projects={projects} visible={tab === "chat"} />
         </div>
       )}
-      {tab !== "chat" && (
+      {tab === "task" && (
         <div className="jarvis-shell jarvis-shell-task">
           {/* No Hologram here any more — it belongs to Chat. On the Task tab it sat above a
               form, pushing the actual controls below the fold, and its readout duplicated the

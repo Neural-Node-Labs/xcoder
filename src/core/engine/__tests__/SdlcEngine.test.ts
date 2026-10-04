@@ -63,9 +63,9 @@ describe("classifyIntake", () => {
     expect(classifyIntake("verify the login flow", { url: "https://example.com" })).toBe("ui_api_test");
   });
 
-  it("classifies existing code + defect signal as refactor", () => {
-    expect(classifyIntake("this is broken, please fix it", { hasCode: true })).toBe("refactor");
-    expect(classifyIntake("add a feature", { hasCode: true, hasDefect: true })).toBe("refactor");
+  it("classifies existing code + defect signal as fix_defect (was misrouted to refactor; fix_defect was unreachable)", () => {
+    expect(classifyIntake("this is broken, please fix it", { hasCode: true })).toBe("fix_defect");
+    expect(classifyIntake("add a feature", { hasCode: true, hasDefect: true })).toBe("fix_defect");
   });
 
   it("classifies existing code + testing language (no defect) as test", () => {

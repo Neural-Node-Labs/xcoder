@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
+import { assertSafeGlob } from "./safeGlob.js";
 import { loadIgnoreRules } from "../indexing/ignoreRules.js";
 import { displayPath } from "./fsToolUtils.js";
 
@@ -25,7 +26,7 @@ export async function sedReplaceMultiTool(
   const flags = (args.flags ?? "g").replace(/y/g, "");
   const re = new RegExp(args.pattern, flags.replace(/g/g, ""));
   const ignore = loadIgnoreRules(cwd);
-  const files = await fg(args.globPattern, { cwd, ignore, dot: false, onlyFiles: true });
+  const files = await fg(assertSafeGlob(args.globPattern), { cwd, ignore, dot: false, onlyFiles: true });
   const affectedFiles: AffectedFile[] = [];
   let totalMatches = 0;
 

@@ -1,0 +1,17 @@
+{
+  "readOnly": "^\\s*(ls|cat|grep|egrep|head|tail|wc|find|stat|pwd|jq|sort|uniq|diff|echo|file|du|df|git\\s+(status|log|diff|show))\\b[^>;&]*$",
+  "deny": [
+    { "pattern": "\\brm\\s+(-[a-zA-Z]+\\s+)*(/|~|\\*|\\.|\\.\\.)(\\s|$)", "reason": "delete of root, home, cwd or glob" },
+    { "pattern": ":\\(\\)\\s*\\{", "reason": "fork bomb" },
+    { "pattern": "(curl|wget)[^|;]*\\|\\s*(ba|z)?sh", "reason": "pipe remote script into a shell" },
+    { "pattern": "\\bmkfs|dd\\s+if=.*of=/dev", "reason": "disk destructive command" },
+    { "pattern": "(^|[\\s=\"'])/(data|app|proc|sys|etc/shadow)\\b", "reason": "access outside the workspace" },
+    { "pattern": "\\.\\./", "reason": "path traversal" },
+    { "pattern": "\\b(nc|ncat|socat)\\b.*-e", "reason": "reverse shell" }
+  ],
+  "approve": [
+    { "pattern": "\\brm\\s+-[a-zA-Z]*[rR]", "reason": "recursive delete" },
+    { "pattern": "git\\s+push|--force|\\s-f\\s", "reason": "forced or remote-changing operation" },
+    { "pattern": "\\b(chmod|chown)\\s+-R", "reason": "recursive permission change" }
+  ]
+}

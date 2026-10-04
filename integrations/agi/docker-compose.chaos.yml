@@ -1,0 +1,6 @@
+# Demo of automatic rollback: every promotion is forced to fail probation.
+#   docker compose -f docker-compose.yml -f docker-compose.chaos.yml up --build
+services:
+  agi:
+    environment:
+      CHAOS_FAIL_PROBATION: "1"

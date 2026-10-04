@@ -6,7 +6,7 @@
 import { describe, it, expect } from "vitest";
 import { dispatchToolCall } from "../toolDispatcher.js";
 import { TOOL_SCHEMAS } from "../toolSchemas.js";
-import { getMood, setMood, runSetMoodTool, isJarvisMood, JARVIS_MOODS } from "../moodTool.js";
+import { getMood, setMood, runSetMoodTool, isJarvisMood, JARVIS_MOODS, MAX_TRACKED_WORKSPACES, trackedWorkspaceCount } from "../moodTool.js";
 import type { ToolCall } from "../../core/types.js";
 
 function call(name: string, args: Record<string, unknown> = {}): ToolCall {
@@ -74,6 +74,32 @@ describe("moodTool.ts store", () => {
   it("runSetMoodTool carries the optional reason through untouched", () => {
     const { reason } = runSetMoodTool(`/tmp/mood-test-${Math.random()}`, "happy", "task completed cleanly");
     expect(reason).toBe("task completed cleanly");
+  });
+});
+
+describe("moodTool.ts store is bounded (memory-growth regression)", () => {
+  it("never tracks more than MAX_TRACKED_WORKSPACES, however many distinct workspaces are seen", () => {
+    for (let i = 0; i < MAX_TRACKED_WORKSPACES + 500; i++) setMood(`/tmp/bound-test-${i}`, "ready");
+    expect(trackedWorkspaceCount()).toBeLessThanOrEqual(MAX_TRACKED_WORKSPACES);
+  });
+
+  it("evicts the least-recently-used workspace first, and keeps one that is being actively read", () => {
+    const keeper = `/tmp/keeper-${Math.random()}`;
+    setMood(keeper, "danger");
+    // Flood well past the cap, but touch the keeper periodically like an active workspace would.
+    for (let i = 0; i < MAX_TRACKED_WORKSPACES * 2; i++) {
+      setMood(`/tmp/flood-${Math.random()}-${i}`, "happy");
+      if (i % 100 === 0) getMood(keeper);
+    }
+    expect(getMood(keeper)).toBe("danger"); // survived — recency was refreshed by the reads
+    expect(trackedWorkspaceCount()).toBeLessThanOrEqual(MAX_TRACKED_WORKSPACES);
+  });
+
+  it("an evicted workspace just gets a fresh valid mood on next read rather than erroring", () => {
+    const victim = `/tmp/victim-${Math.random()}`;
+    setMood(victim, "sad");
+    for (let i = 0; i < MAX_TRACKED_WORKSPACES + 10; i++) setMood(`/tmp/evict-${Math.random()}-${i}`, "ready");
+    expect(JARVIS_MOODS).toContain(getMood(victim));
   });
 });
 

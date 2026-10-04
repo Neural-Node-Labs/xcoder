@@ -1,13 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { JarvisMood } from "./JarvisHologram";
+import type { HologramProps, JarvisMood } from "./holograms/types";
 
 /**
  * <Halogram /> — a holographic AI-face avatar, ported from a static HTML mockup (see
  * ui/public/halogram/*.png for the artwork and the PR/commit that added this file for the
- * original standalone page). Selectable in Settings alongside <JarvisHologram> (see
- * hologramStyle.ts) — the two are deliberately prop-compatible (mood/size/label/hideLabel/
- * assistantName/thinking/listening/bleed/className/style) so ChatPanel.tsx can swap between
- * them without an if/else on props, just on which component to render.
+ * original standalone page). Selectable in Settings alongside every other hologram kind (see
+ * ../hologramRegistry.ts) — they all share the exact same HologramProps contract
+ * (mood/size/label/hideLabel/assistantName/thinking/listening/bleed/className/style — see
+ * ./holograms/types.ts) so ChatPanel.tsx can swap between them without an if/else on props,
+ * just on which component to render.
  *
  * Unlike JarvisHologram, this is NOT a single portable file: it references five PNG frames
  * under ui/public/halogram/ (loaded by URL, not inlined, so they don't bloat the JS bundle —
@@ -68,22 +69,11 @@ const DEFAULT_LABELS: Record<JarvisMood, string> = {
   danger: "Danger — threat imminent",
 };
 
-export interface HalogramProps {
-  mood: JarvisMood;
-  /** Target width in px — height follows the artwork's own aspect ratio. Default 220. */
-  size?: number;
-  label?: string;
-  hideLabel?: boolean;
-  assistantName?: string;
-  /** Speeds up the orbit rings and breathing pulse. See JarvisHologram's identical prop. */
-  thinking?: boolean;
-  /** Adds the same neutral radar-ping ring JarvisHologram uses for "I'm hearing you". */
-  listening?: boolean;
-  /** Extra bottom padding in px so a tightly-clipping parent doesn't crop the glow. */
-  bleed?: number;
-  className?: string;
-  style?: React.CSSProperties;
-}
+export type { JarvisMood };
+/** Halogram needs nothing beyond the shared contract — kept as an alias (not a re-export of
+ *  HologramProps directly) so a future Halogram-only field has somewhere to go without
+ *  touching every other hologram kind. */
+export type HalogramProps = HologramProps;
 
 const STYLE_TAG_ID = "halogram-styles";
 const STAGE_ASPECT = 400 / 336; // matches the source mockup's #scene { aspect-ratio: 336/400 }

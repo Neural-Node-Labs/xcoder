@@ -1,9 +1,8 @@
-import { useState, useRef, useEffect, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback, Suspense } from "react";
 import { api, ModelListResponse, Project } from "../api/client";
-import { JarvisHologram, JarvisMood } from "./JarvisHologram";
-import { Halogram } from "./Halogram";
+import type { JarvisMood } from "./holograms/types";
 import { useAssistantName } from "../assistantName";
-import { useHologramStyle } from "../hologramStyle";
+import { useHologramStyle, getHologramStyleEntry } from "../hologramRegistry";
 import { useSpeechRecognition, useSpeechSynthesis, useUiSounds, useWakeWord } from "../hooks/useSpeech";
 import { VoiceButton, SpeakToggle, SoundToggle, WakeWordToggle, InterimTranscript } from "./VoiceControls";
 import { usePageActive } from "../context/PageActive";
@@ -22,10 +21,11 @@ interface ChatMessage {
  * client-side and replays it as context on every turn.
  *
  * Laid out as a centered console with a hologram avatar standing in for the assistant at the
- * top — which one renders is a Settings choice (see hologramStyle.ts): <Halogram> (a PNG-face
- * design, the default) or <JarvisHologram> (an abstract CSS-only HUD with a voice-bar
- * equalizer). Both take the same props, so this just picks which component runs rather than
- * branching on props. Either way, the avatar carries three independent signals at once:
+ * top — which one renders is a Settings choice, looked up from the shared registry
+ * (../hologramRegistry.ts) rather than branched on here: every kind (the PNG-face Halogram, the
+ * abstract CSS JarvisHologram, and the six WebGL kinds under ./holograms/) takes the exact same
+ * props (see ./holograms/types.ts), so this just renders whichever Component the registry
+ * returns for the selected id. Either way, the avatar carries three independent signals at once:
  *   - mood: the LLM's own read on the conversation, set via set_mood_tool during a run (see
  *     src/tools/moodTool.ts) and returned as ChatResponse.mood. Persists server-side per
  *     workspace until the tool is called again — including across page loads and before the
@@ -206,43 +206,30 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
   return (
     <div className="jarvis-shell">
       <div className="jarvis-hologram-wrap">
-        {hologramStyle === "halogram" ? (
-          <Halogram
-            mood={mood}
-            size={220}
-            bleed={12}
-            thinking={busy}
-            listening={recognition.listening || wakeWord.listening}
-            assistantName={assistantName}
-            label={
-              busy
-                ? `${assistantName} • Processing`
-                : recognition.listening
-                  ? `${assistantName} • Listening`
-                  : wakeWord.listening
-                    ? `${assistantName} • Say "${assistantName}" to talk`
-                    : undefined
-            }
-          />
-        ) : (
-          <JarvisHologram
-            mood={mood}
-            size={220}
-            bleed={12}
-            thinking={busy}
-            listening={recognition.listening || wakeWord.listening}
-            assistantName={assistantName}
-            label={
-              busy
-                ? `${assistantName} • Processing`
-                : recognition.listening
-                  ? `${assistantName} • Listening`
-                  : wakeWord.listening
-                    ? `${assistantName} • Say "${assistantName}" to talk`
-                    : undefined
-            }
-          />
-        )}
+        {(() => {
+          const { Component } = getHologramStyleEntry(hologramStyle);
+          return (
+            <Suspense fallback={<div style={{ width: 220, height: 220 }} />}>
+              <Component
+                mood={mood}
+                size={220}
+                bleed={12}
+                thinking={busy}
+                listening={recognition.listening || wakeWord.listening}
+                assistantName={assistantName}
+                label={
+                  busy
+                    ? `${assistantName} • Processing`
+                    : recognition.listening
+                      ? `${assistantName} • Listening`
+                      : wakeWord.listening
+                        ? `${assistantName} • Say "${assistantName}" to talk`
+                        : undefined
+                }
+              />
+            </Suspense>
+          );
+        })()}
       </div>
 
       <div className="jarvis-meta-row">

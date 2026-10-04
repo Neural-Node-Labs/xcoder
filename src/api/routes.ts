@@ -6,7 +6,7 @@ import crypto from "node:crypto";
 import { OrchestratorOptions } from "../core/orchestrator.js";
 import { createEngine, DEFAULT_ENGINE, listEngines } from "../core/engine/EngineRegistry.js";
 import { createLlmClient } from "../llm/deepseekClient.js";
-import { FileTelemetry } from "../telemetry/logger.js";
+import { createTelemetry, initOpenTelemetry } from "../telemetry/index.js";
 import { loadLlmConfig } from "../config/loadConfig.js";
 import { resolveLogsDir } from "../config/paths.js";
 import { SkillRegistry } from "../core/skillRegistry.js";
@@ -15,6 +15,7 @@ import { verifyGoogleIdToken, isGoogleSignInConfigured, getGoogleClientId } from
 import { loadPersistedUsers, persistUsers, nextUserIdAfter } from "./userStorePersistence.js";
 import { registerProjectRoutes } from "./projectRoutes.js";
 import { registerPlanRoutes } from "./planRoutes.js";
+import { registerAgiRoutes } from "./agiProxy.js";
 import { listModels, isAllowedModel, type ModelListResult } from "./ollamaModels.js";
 import { listProjects, getProject, getActiveProject } from "./projectStore.js";
 import { hasStoredApiKey, setStoredApiKey, clearStoredApiKey, applyStoredApiKey } from "./llmKeyStore.js";
@@ -302,6 +303,13 @@ export function createRouter(): Router {
   // when these were registered before it.
   registerProjectRoutes(router);
   registerPlanRoutes(router);
+  // AGI DevOps harness gateway (integrations/agi) — authenticated, role-gated, validated proxy.
+  // Registered after authMiddleware for the same reason as the two above. See agiProxy.ts.
+  registerAgiRoutes(router, {
+    getUser: authedUser,
+    checkTaskRateLimit,
+    audit: (req, action, summary, details) => recordAudit(req, action, summary, details),
+  });
 
   // ─── Engine registry ────────────────────────────────────────────────────
   // Lets the UI populate an engine picker without hardcoding engine names, and confirms
@@ -352,8 +360,45 @@ export function createRouter(): Router {
   });
 
   // ─── Chat / Task Execution ─────────────────────────────────────────────
+
+  // ─── SDLC intake validation ────────────────────────────────────────────────────────
+  // `intake` / `resumeTaskId` come straight from the request body, so they are validated
+  // field-by-field (never spread): only known boolean flags, an evidence string capped in size
+  // (it is fenced as data by the engine and never executed), and a pattern-checked task id.
+  const MAX_EVIDENCE_CHARS = 50_000;
+  function parseSdlcInput(body: { intake?: unknown; resumeTaskId?: unknown }): { intake?: import("../core/engine/SdlcEngine.js").SdlcIntakeSignals; resumeTaskId?: string; error?: string } {
+    let intake: import("../core/engine/SdlcEngine.js").SdlcIntakeSignals | undefined;
+    if (body.intake !== undefined) {
+      if (typeof body.intake !== "object" || body.intake === null || Array.isArray(body.intake)) return { error: "'intake' must be an object" };
+      const raw = body.intake as Record<string, unknown>;
+      intake = {};
+      for (const flag of ["hasCode", "hasDefect", "hasDesign", "hasUiDesign", "hasFailedTest", "hasFailedDeployment"] as const) {
+        if (raw[flag] === undefined) continue;
+        if (typeof raw[flag] !== "boolean") return { error: `'intake.${flag}' must be a boolean` };
+        intake[flag] = raw[flag] as boolean;
+      }
+      if (raw.evidence !== undefined) {
+        if (typeof raw.evidence !== "string") return { error: "'intake.evidence' must be a string" };
+        if (raw.evidence.length > MAX_EVIDENCE_CHARS) return { error: `'intake.evidence' exceeds ${MAX_EVIDENCE_CHARS} characters — attach large material as a workspace file instead` };
+        intake.evidence = raw.evidence;
+      }
+    }
+    let resumeTaskId: string | undefined;
+    if (body.resumeTaskId !== undefined) {
+      if (typeof body.resumeTaskId !== "string" || !/^sdlc-[a-z0-9]+(?:-[a-z0-9]+)*$/.test(body.resumeTaskId) || body.resumeTaskId.length > 64) return { error: "'resumeTaskId' is not a valid task id" };
+      resumeTaskId = body.resumeTaskId;
+    }
+    return { intake, resumeTaskId };
+  }
+
+
   router.post("/chat", async (req: Request, res: Response) => {
     const { task, planMode, fullContextToken, projectId, maxIterations, isolatedWorkspace, continueOnLimit, phasePlanning, engine, model } = req.body as ChatRequest;
+    const sdlcInput = parseSdlcInput(req.body as ChatRequest);
+    if (sdlcInput.error) {
+      res.status(400).json({ success: false, error: sdlcInput.error } as ApiResponse);
+      return;
+    }
 
     if (!task || typeof task !== "string" || task.trim().length === 0) {
       const body: ApiResponse = { success: false, error: "Missing or empty 'task' field" };
@@ -382,7 +427,7 @@ export function createRouter(): Router {
       return;
     }
 
-    const telemetry = new FileTelemetry(cwd);
+    const telemetry = createTelemetry(cwd);
     const llmConfig = loadLlmConfig();
     applyStoredApiKey(llmConfig);
     if (overrideModel) llmConfig.model = overrideModel;
@@ -420,6 +465,8 @@ export function createRouter(): Router {
     if (continueOnLimit) opts.continueOnLimit = true;
     // Map API's phasePlanning (true = enable) to orchestrator's singlePhase (false = enable)
     if (phasePlanning === false) opts.singlePhase = true;
+    if (sdlcInput.intake) opts.sdlcIntake = sdlcInput.intake;
+    if (sdlcInput.resumeTaskId) opts.sdlcResumeTaskId = sdlcInput.resumeTaskId;
 
     const orchestrator = createEngine(resolveEngineName(engine), { llm, telemetry, options: { ...opts, persistToDb: true } });
 
@@ -567,7 +614,7 @@ export function createRouter(): Router {
       return;
     }
 
-    const telemetry = new FileTelemetry(cwd);
+    const telemetry = createTelemetry(cwd);
     const llmConfig = loadLlmConfig();
     applyStoredApiKey(llmConfig);
     if (overrideModel) llmConfig.model = overrideModel;
@@ -647,7 +694,7 @@ export function createRouter(): Router {
       res.status(404).json({ success: false, error: projectError } as ApiResponse);
       return;
     }
-    const telemetry = new FileTelemetry(cwd);
+    const telemetry = createTelemetry(cwd);
     const llmConfig = loadLlmConfig();
     applyStoredApiKey(llmConfig);
     // Whatever model the plan was drafted with is what executes it — see PlanSession.model.

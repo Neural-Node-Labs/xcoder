@@ -134,6 +134,8 @@ registerEngine("sdlc", ({ llm, telemetry, io, options }) => {
     consoleThoughts: options?.consoleThoughts,
     fullContextToken: options?.fullContextToken,
     agentMaxIterations: options?.maxIterations,
+    intake: options?.sdlcIntake,
+    resumeTaskId: options?.sdlcResumeTaskId,
     io,
   };
   return new SdlcEngine(llm, telemetry, sdlcOpts);

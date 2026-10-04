@@ -1,9 +1,8 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { api, HealthResponse, EnginesResponse, LlmConfigSummary, LlmProviderDefault } from "../api/client";
 import { THEMES, applyTheme, getStoredTheme } from "../theme";
-import { JarvisHologram, JarvisMood } from "../components/JarvisHologram";
-import { Halogram } from "../components/Halogram";
-import { HOLOGRAM_STYLES, getStoredHologramStyle, setHologramStyle } from "../hologramStyle";
+import type { JarvisMood } from "../components/holograms/types";
+import { HOLOGRAM_STYLES, getStoredHologramStyle, setHologramStyle, getHologramStyleEntry } from "../hologramRegistry";
 import { DEFAULT_ASSISTANT_NAME, getAssistantName, setAssistantName } from "../assistantName";
 
 const JARVIS_MOODS: JarvisMood[] = ["ready", "happy", "sad", "alert", "attack", "danger"];
@@ -299,8 +298,9 @@ export function SettingsPage() {
         <div className="card-title">Hologram</div>
         <p className="text-2" style={{ marginTop: 0, marginBottom: 16, fontSize: 12 }}>
           Which avatar renders in the Chat tab, and a live preview of every mood it can show.
-          Both components take the same props (mood/thinking/listening/assistantName) — this
-          only changes which one <code>ChatPanel.tsx</code> renders, not how mood itself works.
+          Every kind takes the exact same props (mood/thinking/listening/assistantName — see
+          <code> ui/src/components/holograms/types.ts</code>) — this only changes which
+          component <code>ChatPanel.tsx</code> renders, not how mood itself works.
         </p>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 18 }}>
           {HOLOGRAM_STYLES.map((s) => (
@@ -334,11 +334,14 @@ export function SettingsPage() {
           ))}
         </div>
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
-          {hologramStyleChoice === "halogram" ? (
-            <Halogram mood={demoMood} size={160} />
-          ) : (
-            <JarvisHologram mood={demoMood} size={160} />
-          )}
+          {(() => {
+            const { Component } = getHologramStyleEntry(hologramStyleChoice);
+            return (
+              <Suspense fallback={<div style={{ width: 160, height: 160 }} />}>
+                <Component mood={demoMood} size={160} />
+              </Suspense>
+            );
+          })()}
           <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 140 }}>
             {JARVIS_MOODS.map((m) => (
               <button

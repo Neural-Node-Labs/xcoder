@@ -2,6 +2,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import fg from "fast-glob";
+import { assertSafeGlob } from "./safeGlob.js";
 import { loadIgnoreRules } from "../indexing/ignoreRules.js";
 import { CEILINGS, truncateActionable } from "./fsToolUtils.js";
 
@@ -25,7 +26,7 @@ export async function searchCodeTool(
 ): Promise<SearchCodeResult> {
   const contextLines = Math.min(Math.max(0, args.contextLines ?? 2), CEILINGS.maxContextLines);
   const ignore = loadIgnoreRules(cwd);
-  const files = await fg(args.globPattern ?? "**/*", { cwd, ignore, dot: false, onlyFiles: true });
+  const files = await fg(assertSafeGlob(args.globPattern ?? "**/*"), { cwd, ignore, dot: false, onlyFiles: true });
   const re = new RegExp(args.pattern);
   const matches: SearchMatch[] = [];
 

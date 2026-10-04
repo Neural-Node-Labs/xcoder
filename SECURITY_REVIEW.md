@@ -284,3 +284,25 @@ Not a re-review; noting two places where subsequent work touches findings above.
 
 No other findings or open items in this document are affected.
 
+
+## Follow-up review (2026-10-03) — newer features, rate limiting, dependency audit
+
+**Verified OK**
+- `set_mood_tool` / `GET mood` surface: only reachable behind `authMiddleware`; mood value is validated against a fixed enum, `reason` is never rendered as HTML (no `dangerouslySetInnerHTML`/`innerHTML` anywhere in `ui/src`); per-workspace map is LRU-bounded.
+- Hologram registry and voice features are client-side only (no new endpoints).
+- Rate limiting: login and `/auth/google` (IP+username), `/chat`, `/chat/plan`, `index-workspace`, `security-ops/run` (per-user task bucket), workspace file mutations (own bucket). `/chat/execute` is intentionally unlimited: it only consumes a single-use session minted by the limited `/chat/plan`.
+- Root `npm audit`: `gaxios`/`uuid` (via google-auth-library) — the vulnerable code path (v3/v5/v6 with caller-supplied `buf`) is not used by token verification; no fix path via `npm audit fix` at time of writing.
+- UI `npm audit` (5 findings incl. 1 critical on `vitest`, 1 high on `vite`): all are dev-server / test-runner issues. None of vite/vitest/esbuild ships in the production bundle or nginx image; risk is limited to a developer running `npm run dev`/vitest UI while browsing hostile sites. Upgrade requires vite/vitest major bumps — deferred, do on a dedicated branch.
+
+**Fixed**
+- `fast-glob → micromatch → braces ≤3.0.3` stack-exhaustion DoS (no upstream fix). Glob patterns reach fast-glob from LLM tool calls (`glob`, `find_files`, `search_code`, `search_ast`, `sed_replace_multi`). Added `src/tools/safeGlob.ts` (`assertSafeGlob`: max 512 chars, max 5 nested braces) and applied it at all five call sites, with tests.
+
+**Open / recommendations**
+- `/register` bootstrap: the first caller to a fresh, empty server becomes admin (by design) — deploy with the first admin created before exposing the port. Minimum password length is only 4 characters; consider 8+ (would need test/e2e fixture updates).
+- CSP still needs a one-time manual browser smoke test with Google Sign-In configured.
+
+## SDLC engine hardening + AGI gateway (2026-10-04)
+
+**SDLC engine (`src/core/engine/SdlcEngine.ts`)** — fixed: a timed-out sub-agent kept running (and its late rejection was an *unhandled rejection*, fatal on Node ≥15) while the healing retry started a second agent on the same files → now cancelled, awaited with a grace period, rejection pre-handled; `cancel()` now propagates to the running sub-agent; a throwing validator skipped healing → now fails closed and heals; an empty frontier with pending nodes was reported as success → now escalates; added token and wall-clock budgets, input validation, re-entrancy guard, atomic per-stage checkpoints (0600, temp+rename) with strict validation on resume (workspace-writable file ⇒ untrusted), secret redaction of checkpoints/reports/telemetry (a test caught the task text leaking into the checkpoint), and fenced/size-capped untrusted evidence and prior-stage output against prompt injection. `fix_defect` was unreachable (defects routed to `refactor`); added failed-test, UI/UX and failed-deployment paths that always re-verify.
+**OpenTelemetry** (`src/telemetry/otel.ts`): off unless `XCODER_OTEL_ENABLED`/`OTEL_EXPORTER_OTLP_*`; every OTel call is wrapped so telemetry can never crash the engine; no prompts are exported (sizes/tokens/tool names only, redacted). Real OTLP export verified against a local collector (`npm run smoke:otlp`). Scenario results: `SDLC_SCENARIO_REPORT.md` (`npm run scenarios`).
+**AGI gateway** — see `integrations/agi/XCODER_INTEGRATION.md`. A test caught the gateway relaying an upstream 500's message text to the browser; fixed. Residual: the AGI service is a single shared agent (no per-user isolation of memory/skills/goal); container isolation is not a VM.

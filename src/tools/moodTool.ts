@@ -24,6 +24,32 @@ export const JARVIS_MOODS: JarvisMood[] = ["happy", "sad", "alert", "ready", "at
 
 const moodByWorkspace = new Map<string, JarvisMood>();
 
+/** Upper bound on tracked workspaces. The key is the workspace cwd, and isolated-workspace runs
+ *  (see ChatRequest.isolatedWorkspace) can mint a fresh temp directory per run — without a cap
+ *  this Map gained one permanent entry per historical run for the life of the server process, a
+ *  slow but unbounded memory leak an authenticated user could accelerate just by submitting
+ *  many isolated tasks. 1000 entries is a few tens of KB; the least-recently-used are evicted
+ *  first, and an evicted workspace simply gets a fresh random mood next time (same as a
+ *  never-seen one — see getMood), so eviction is invisible in practice. */
+export const MAX_TRACKED_WORKSPACES = 1000;
+
+/** Marks `cwd` as most-recently-used (Map preserves insertion order, so delete + set moves it
+ *  to the end) and evicts from the front — the least recently used — while over the cap. */
+function touch(cwd: string, mood: JarvisMood): void {
+  moodByWorkspace.delete(cwd);
+  moodByWorkspace.set(cwd, mood);
+  while (moodByWorkspace.size > MAX_TRACKED_WORKSPACES) {
+    const oldest = moodByWorkspace.keys().next().value;
+    if (oldest === undefined) break;
+    moodByWorkspace.delete(oldest);
+  }
+}
+
+/** Test-only visibility into the bound above. */
+export function trackedWorkspaceCount(): number {
+  return moodByWorkspace.size;
+}
+
 function pickRandomMood(): JarvisMood {
   return JARVIS_MOODS[Math.floor(Math.random() * JARVIS_MOODS.length)];
 }
@@ -36,15 +62,13 @@ export function isJarvisMood(value: unknown): value is JarvisMood {
  *  than defaulting to a fixed mood every workspace would otherwise start in identically. */
 export function getMood(cwd: string): JarvisMood {
   let mood = moodByWorkspace.get(cwd);
-  if (!mood) {
-    mood = pickRandomMood();
-    moodByWorkspace.set(cwd, mood);
-  }
+  if (!mood) mood = pickRandomMood();
+  touch(cwd, mood); // also refreshes recency on every read, so an active workspace isn't evicted
   return mood;
 }
 
 export function setMood(cwd: string, mood: JarvisMood): void {
-  moodByWorkspace.set(cwd, mood);
+  touch(cwd, mood);
 }
 
 /** Used by the dispatcher: validates the LLM's requested mood, falling back to a random pick

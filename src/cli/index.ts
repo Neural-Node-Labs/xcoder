@@ -7,7 +7,7 @@ import { loadLlmConfig } from "../config/loadConfig.js";
 import { resolveReportsDir } from "../config/paths.js";
 import { createLlmClient } from "../llm/deepseekClient.js";
 import { setVerbose, reportStartupBanner } from "./consoleReporter.js";
-import { FileTelemetry } from "../telemetry/logger.js";
+import { createTelemetry, initOpenTelemetry } from "../telemetry/index.js";
 import { OrchestratorOptions } from "../core/orchestrator.js";
 import { IReactEngine } from "../core/engine/IReactEngine.js";
 import { createEngine, listEngines, DEFAULT_ENGINE } from "../core/engine/EngineRegistry.js";
@@ -93,7 +93,10 @@ program
     setVerbose(opts.verbose === true);
 
     const cwd = process.cwd();
-    const telemetry = new FileTelemetry(cwd);
+    // OpenTelemetry: no-op unless enabled via env (see src/telemetry/otel.ts). Flushed on exit.
+    const otelShutdown = await initOpenTelemetry();
+    process.once("beforeExit", () => { void otelShutdown(); });
+    const telemetry = createTelemetry(cwd);
     const llmConfig = loadLlmConfig();
     const io = new CliIO({ interactive: !opts.auto });
 

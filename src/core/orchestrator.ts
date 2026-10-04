@@ -23,6 +23,10 @@ import { refreshWorkspaceInfo, readCachedWorkspaceInfo, summarizeWorkspaceInfo }
 
 
 export interface OrchestratorOptions {
+  /** sdlc engine only: validated intake signals/evidence (see ChatRequest.intake). */
+  sdlcIntake?: import("./engine/SdlcEngine.js").SdlcIntakeSignals;
+  /** sdlc engine only: resume a halted run from its checkpoint. */
+  sdlcResumeTaskId?: string;
   maxIterations?: number; // "iteration maxout" ceiling per round
   cwd?: string;
   planMode?: "auto" | "always" | "never"; // "auto": plan mode kicks in for multi-skill/complex tasks
