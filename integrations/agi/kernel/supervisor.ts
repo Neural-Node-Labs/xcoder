@@ -3,6 +3,7 @@
  * Runs as root inside the container, launches the agent as an unprivileged user, and owns /data/control.
  * The agent can only *request* promotion by writing /data/agent/promote.json.
  */
+import "../src/secretFiles";   // must stay first: resolves AGI_API_TOKEN_FILE / SANDBOX_TOKEN_FILE before config.ts reads env
 import { spawn, ChildProcess } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";

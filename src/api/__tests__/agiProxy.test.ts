@@ -68,6 +68,17 @@ beforeAll(async () => {
 afterAll(() => { upstream.closeAllConnections?.(); upstream.close(); app.closeAllConnections?.(); app.close(); });
 beforeEach(() => { seen = []; upstreamStatus = {}; audits.length = 0; limited = false; });
 
+describe("agiConfig opt-out", () => {
+  it.each(["off", "OFF", "false", "0", "disabled"])("XCODER_AGI_URL=%s disables the gateway", async (v) => {
+    const { agiConfig } = await import("../agiProxy.js");
+    expect(agiConfig({ XCODER_AGI_URL: v }).base).toBeUndefined();
+  });
+  it("a normal URL still enables it", async () => {
+    const { agiConfig } = await import("../agiProxy.js");
+    expect(agiConfig({ XCODER_AGI_URL: "http://agi:7000" }).base).toBe("http://agi:7000");
+  });
+});
+
 describe("AGI gateway — authorisation by role", () => {
   const userAllowed: Array<[string, string, unknown?]> = [["GET", "/agi/status"], ["GET", "/agi/goal"], ["GET", "/agi/skills"], ["POST", "/agi/chat", { message: "hi" }]];
   const adminOnly: Array<[string, string, unknown?]> = [

@@ -14,7 +14,7 @@ set -e
 # `*_FILE` env var in the container — unrelated tooling vars (SSL_CERT_FILE,
 # PIP_CONFIG_FILE, etc.) could otherwise be swept up unintentionally. Add to
 # this list if you configure a custom `api_key_env` name in agent/config/llm.yaml.
-XCODER_SECRET_VARS="DATABASE_PASSWORD DATABASE_URL ANTHROPIC_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY OPENROUTER_API_KEY GROQ_API_KEY"
+XCODER_SECRET_VARS="DATABASE_PASSWORD DATABASE_URL ANTHROPIC_API_KEY OPENAI_API_KEY DEEPSEEK_API_KEY OPENROUTER_API_KEY GROQ_API_KEY XCODER_AGI_TOKEN"
 
 resolve_secret_files_into_env() {
   tmpfile=$(mktemp)

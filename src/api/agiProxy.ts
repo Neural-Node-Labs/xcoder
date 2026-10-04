@@ -47,7 +47,7 @@ const MAX_SSE_TOTAL = 20;
 export function agiConfig(env: NodeJS.ProcessEnv = process.env): { base?: string; token: string } {
   const raw = (env.XCODER_AGI_URL ?? "").trim();
   let base: string | undefined;
-  if (raw) {
+  if (raw && !/^(off|false|0|disabled?)$/i.test(raw)) {   // explicit opt-out for deployments that bundle the AGI by default
     try {
       const u = new URL(raw);
       if (u.protocol === "http:" || u.protocol === "https:") base = u.origin; // origin only: no path/creds can sneak in

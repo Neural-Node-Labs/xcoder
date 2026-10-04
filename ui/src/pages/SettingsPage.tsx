@@ -1,4 +1,5 @@
-import { useState, useEffect, Suspense } from "react";
+import { useState, useEffect } from "react";
+import { SafeHologram } from "../components/holograms/SafeHologram";
 import { api, HealthResponse, EnginesResponse, LlmConfigSummary, LlmProviderDefault } from "../api/client";
 import { THEMES, applyTheme, getStoredTheme } from "../theme";
 import type { JarvisMood } from "../components/holograms/types";
@@ -335,12 +336,8 @@ export function SettingsPage() {
         </div>
         <div style={{ display: "flex", gap: 24, alignItems: "flex-start", flexWrap: "wrap" }}>
           {(() => {
-            const { Component } = getHologramStyleEntry(hologramStyleChoice);
-            return (
-              <Suspense fallback={<div style={{ width: 160, height: 160 }} />}>
-                <Component mood={demoMood} size={160} />
-              </Suspense>
-            );
+            const { Component, id } = getHologramStyleEntry(hologramStyleChoice);
+            return <SafeHologram Component={Component} id={id} mood={demoMood} size={160} />;
           })()}
           <div style={{ display: "flex", flexDirection: "column", gap: 6, minWidth: 140 }}>
             {JARVIS_MOODS.map((m) => (

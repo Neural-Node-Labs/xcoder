@@ -6,7 +6,10 @@ const path = require("path");
 const { spawn } = require("child_process");
 
 const ROOT = process.env.WORK_ROOT || "/work";
-const TOKEN = process.env.SANDBOX_TOKEN || "";
+let TOKEN = process.env.SANDBOX_TOKEN || "";
+if (!TOKEN && process.env.SANDBOX_TOKEN_FILE) {            // Docker-secrets style; an explicit SANDBOX_TOKEN wins
+  try { TOKEN = fs.readFileSync(process.env.SANDBOX_TOKEN_FILE, "utf8").trim(); } catch (e) { console.error("SANDBOX_TOKEN_FILE unreadable:", e.message); }
+}
 const MAX_OUT = 64 * 1024;
 
 function dir(session) {

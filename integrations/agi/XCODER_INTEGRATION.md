@@ -11,18 +11,20 @@ The AGI harness (`UPSTREAM_README.md`) is vendored here as an **optional, separa
 ## Why a gateway and not "merge the code"
 The AGI's safety comes from process/container boundaries: a root supervisor launches the agent as uid 1001, the agent can't write the kernel/policy/release pointer, and every command runs in a sandbox on an `internal: true` network. Importing it into xcoder's API process would erase those boundaries. So it stays its own service, and xcoder adds what it lacked: **authentication** (upstream had none and bound to localhost).
 
-## Enable it
-```bash
-# .env — secrets must be 16+ chars and not placeholders, or the agent refuses to start
-XCODER_AGI_URL=http://agi:7000
-AGI_API_TOKEN=$(openssl rand -hex 24)
-SANDBOX_TOKEN=$(openssl rand -hex 24)
-# AGI_LLM_MODE=anthropic   # needs ANTHROPIC_API_KEY; default is offline mock
+## Enabled by default
+The AGI services are part of the main `docker-compose.yml`, so a plain `docker compose up -d --build` starts them
+(`agi-init`, `agi`, `agi-sandbox`, `agi-jaeger`); `docker-compose.prod.yml` layers on top as before.
 
-docker compose -f docker-compose.yml -f docker-compose.agi.yml up -d --build
-# prod: docker compose -f docker-compose.prod.yml -f docker-compose.agi.yml up -d --build
-```
-Nothing publishes a host port except Jaeger on `127.0.0.1:16686`. Without `XCODER_AGI_URL` the tab shows setup instructions and the gateway answers 503.
+* **Secrets need no setup.** `agi-init` generates both shared secrets (192-bit random) on first start and keeps them in
+  the `agi_secrets` volume; the services read them from files (`*_FILE`). Put `AGI_API_TOKEN` / `SANDBOX_TOKEN` (16+
+  chars) in `.env` to pin your own. The agent still refuses to start with a missing or placeholder secret.
+* **Offline mock model by default.** Set `AGI_LLM_MODE=anthropic` and `ANTHROPIC_API_KEY` for real work.
+* **Autonomous mode stays off** until an admin starts it in AGI → Schedule, so nothing spends tokens by itself.
+* **xcoder does not depend on the agent.** If it is down the tab shows "unreachable" and everything else works.
+* **Opt out:** `XCODER_AGI_URL=off` in `.env`, and start with
+  `--scale agi=0 --scale agi-sandbox=0 --scale agi-jaeger=0 --scale agi-init=0`.
+
+Nothing publishes a host port except Jaeger on `127.0.0.1:16686`. With the gateway disabled the tab shows setup instructions and the gateway answers 503.
 
 ## Who can do what
 The AGI is **one shared agent**; its activity feed carries other users' prompts and tool arguments, so it is not multi-tenant safe.

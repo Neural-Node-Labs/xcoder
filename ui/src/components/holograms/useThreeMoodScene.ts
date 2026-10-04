@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import type { SourceMoodKey } from "./moodMapping";
 
@@ -78,6 +78,9 @@ export function useThreeMoodScene<TConfig extends Record<string, unknown>>({
   speedFactor,
   build,
 }: UseThreeMoodSceneOptions<TConfig>) {
+  // Failures inside effects/rAF callbacks are invisible to React error boundaries unless re-thrown during render.
+  const [fatal, setFatal] = useState<Error | null>(null);
+  if (fatal) throw fatal;
   const buildRef = useRef(build);
   buildRef.current = build;
   // Read live inside the RAF loop via refs rather than restarting the whole scene (which would
@@ -100,7 +103,13 @@ export function useThreeMoodScene<TConfig extends Record<string, unknown>>({
     const initialConfig = configs[activeKeyRef.current];
     camera.position.set(0, 0, (initialConfig.cameraDist as number | undefined) ?? 5.5);
 
-    const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    let renderer: THREE.WebGLRenderer;
+    try {
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+    } catch (e) {   // no WebGL / blocklisted GPU / context limit reached
+      setFatal(e instanceof Error ? e : new Error("WebGL is unavailable"));
+      return;
+    }
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.domElement.style.display = "block";
     containerEl.appendChild(renderer.domElement);
@@ -116,7 +125,16 @@ export function useThreeMoodScene<TConfig extends Record<string, unknown>>({
     const ro = new ResizeObserver(resize);
     ro.observe(containerEl);
 
-    const { onFrame, colorTargets, dispose: disposeExtra } = buildRef.current({ THREE, scene, camera, initialConfig });
+    let built: ThreeMoodSceneBuildResult<TConfig>;
+    try {
+      built = buildRef.current({ THREE, scene, camera, initialConfig });
+    } catch (e) {
+      ro.disconnect(); renderer.dispose();
+      if (renderer.domElement.parentNode === containerEl) containerEl.removeChild(renderer.domElement);
+      setFatal(e instanceof Error ? e : new Error(String(e)));
+      return;
+    }
+    const { onFrame, colorTargets, dispose: disposeExtra } = built;
 
     let colorFrom = new THREE.Color(moodColorRef.current);
     let colorTo = new THREE.Color(moodColorRef.current);
@@ -129,7 +147,19 @@ export function useThreeMoodScene<TConfig extends Record<string, unknown>>({
     const clock = new THREE.Clock();
     let raf = 0;
 
+    let stopped = false;
     function frame() {
+      if (stopped) return;
+      try {
+        step();
+      } catch (e) {          // a throw inside rAF would silently kill the loop; surface it to the boundary instead
+        stopped = true;
+        setFatal(e instanceof Error ? e : new Error(String(e)));
+        return;
+      }
+      raf = requestAnimationFrame(frame);
+    }
+    function step() {
       const now = clock.getElapsedTime();
 
       if (activeKeyRef.current !== lastKey || moodColorRef.current !== lastColor) {
@@ -148,16 +178,26 @@ export function useThreeMoodScene<TConfig extends Record<string, unknown>>({
 
       onFrame(now, liveConfig, speedFactorRef.current);
       renderer.render(scene, camera);
-      raf = requestAnimationFrame(frame);
     }
     raf = requestAnimationFrame(frame);
 
+    // GPU context loss (tab backgrounded on mobile, driver reset): pause instead of rendering into a dead context.
+    const canvas = renderer.domElement;
+    const onLost = (ev: Event) => { ev.preventDefault(); stopped = true; cancelAnimationFrame(raf); };
+    const onRestored = () => { if (stopped) { stopped = false; raf = requestAnimationFrame(frame); } };
+    canvas.addEventListener("webglcontextlost", onLost);
+    canvas.addEventListener("webglcontextrestored", onRestored);
+
     return () => {
+      stopped = true;
+      canvas.removeEventListener("webglcontextlost", onLost);
+      canvas.removeEventListener("webglcontextrestored", onRestored);
       cancelAnimationFrame(raf);
       ro.disconnect();
       disposeExtra?.();
       disposeObject3D(scene);
       renderer.dispose();
+      renderer.forceContextLoss();   // browsers cap live WebGL contexts (~16); free this one now, not at GC
       if (renderer.domElement.parentNode === containerEl) containerEl.removeChild(renderer.domElement);
     };
     // Mount-once: activeKey/moodColor/speedFactor are read live via the refs above every frame

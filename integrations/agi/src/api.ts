@@ -25,7 +25,7 @@ export function startApi(d: ApiDeps) {
   // except /healthz (the container healthcheck) requires `Authorization: Bearer <token>`. xcoder's
   // authenticated proxy (src/api/agiProxy.ts) is the only intended caller. Constant-time compare.
   const apiToken = process.env.AGI_API_TOKEN ?? "";
-  // REQUIRE_API_TOKEN=1 (set by docker-compose.agi.yml) makes a missing/default secret a startup
+  // REQUIRE_API_TOKEN=1 (set in docker-compose.yml) makes a missing/default secret a startup
   // failure instead of silently running an open, command-executing agent on the compose network.
   if (process.env.REQUIRE_API_TOKEN === "1") {
     const bad = (v: string | undefined) => !v || v.length < 16 || /^change-me/i.test(v);

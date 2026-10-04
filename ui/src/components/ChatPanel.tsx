@@ -1,4 +1,5 @@
-import { useState, useRef, useEffect, useCallback, Suspense } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { SafeHologram } from "./holograms/SafeHologram";
 import { api, ModelListResponse, Project } from "../api/client";
 import type { JarvisMood } from "./holograms/types";
 import { useAssistantName } from "../assistantName";
@@ -207,27 +208,27 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
     <div className="jarvis-shell">
       <div className="jarvis-hologram-wrap">
         {(() => {
-          const { Component } = getHologramStyleEntry(hologramStyle);
+          const { Component, id } = getHologramStyleEntry(hologramStyle);
           return (
-            <Suspense fallback={<div style={{ width: 220, height: 220 }} />}>
-              <Component
-                mood={mood}
-                size={220}
-                bleed={12}
-                thinking={busy}
-                listening={recognition.listening || wakeWord.listening}
-                assistantName={assistantName}
-                label={
-                  busy
-                    ? `${assistantName} • Processing`
-                    : recognition.listening
-                      ? `${assistantName} • Listening`
-                      : wakeWord.listening
-                        ? `${assistantName} • Say "${assistantName}" to talk`
-                        : undefined
-                }
-              />
-            </Suspense>
+            <SafeHologram
+              Component={Component}
+              id={id}
+              mood={mood}
+              size={220}
+              bleed={12}
+              thinking={busy}
+              listening={recognition.listening || wakeWord.listening}
+              assistantName={assistantName}
+              label={
+                busy
+                  ? `${assistantName} • Processing`
+                  : recognition.listening
+                    ? `${assistantName} • Listening`
+                    : wakeWord.listening
+                      ? `${assistantName} • Say "${assistantName}" to talk`
+                      : undefined
+              }
+            />
           );
         })()}
       </div>
@@ -244,7 +245,7 @@ export function ChatPanel({ projects, visible = true }: { projects: Project[]; v
           </select>
         )}
 
-        {modelInfo && modelInfo.models.length > 1 && (
+        {modelInfo && Array.isArray(modelInfo.models) && modelInfo.models.length > 1 && (
           <select
             value={model}
             onChange={(e) => {
