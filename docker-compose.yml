@@ -10,7 +10,7 @@ services:
       - xcoder-postgres-data:/var/lib/postgresql/data
     ports:
       # Exposed on the host for local psql/GUI access; remove if not needed.
-      - "${DATABASE_PORT:-5432}:5432"
+      - "127.0.0.1:${DATABASE_PORT:-5432}:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${DATABASE_USER:-xcoder} -d ${DATABASE_NAME:-xcoder}"]
       interval: 5s
@@ -37,7 +37,7 @@ services:
         condition: service_completed_successfully
       # The AGI secret must exist before the gateway first reads it. agi itself is NOT a dependency:
       # xcoder starts and works the same whether or not the agent is up (the AGI tab shows "unreachable").
-      agi-init:
+      secrets-init:
         condition: service_completed_successfully
       # No depends_on entry for codegraph-api here, even though the environment below points at
       # it — CodeGraph is a sibling service (see codegraph-api further down) and xcoder's core
@@ -55,6 +55,9 @@ services:
       DATABASE_SSL: "false"
       XCODER_API_PORT: 3001
       XCODER_API_HOST: 0.0.0.0
+      XCODER_TRUST_PROXY: ${XCODER_TRUST_PROXY:-1}   # nginx is 1 hop in front; makes the login limiter see real client IPs
+      XCODER_SAAS_MODE: ${XCODER_SAAS_MODE:-}
+      XCODER_SECRET_KEY: ${XCODER_SECRET_KEY:-}
       # Default backend is Ollama (agent/config/llm.yaml, mounted below) — no key needed.
       # Set these if you switch the mounted llm.yaml to a cloud provider instead.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
@@ -73,13 +76,19 @@ services:
       XCODER_CODEGRAPH_ADMIN_PASSWORD: ${CODEGRAPH_ADMIN_PASSWORD:-codegraph_admin_pass}
       XCODER_CODEGRAPH_MCP_URL: http://codegraph-mcp:8900/mcp
       # AGI DevOps agent (bundled, on by default). xcoder's authenticated /api/v1/agi/* gateway is the only
-      # way to reach it. The shared secret is generated once by agi-init into the agi_secrets volume (or taken
+      # way to reach it. The shared secret is generated once by secrets-init into the shared_secrets volume (or taken
       # from AGI_API_TOKEN in .env) and read from that file. To turn the feature off set XCODER_AGI_URL=off
-      # and run with: --scale agi=0 --scale agi-sandbox=0 --scale agi-jaeger=0 --scale agi-init=0
+      # and run with: --scale agi=0 --scale agi-sandbox=0 --scale agi-jaeger=0 --scale secrets-init=0
       XCODER_AGI_URL: ${XCODER_AGI_URL:-http://agi:7000}
       XCODER_AGI_TOKEN_FILE: /secrets/agi_api_token
+      # LLM response cache (chat + tasks). Exact-match, fail-open: if Redis is down xcoder just calls the model.
+      # Off: XCODER_CACHE=off. Other knobs: XCODER_CACHE_TTL_SECONDS, XCODER_CACHE_MAX_TEMPERATURE, XCODER_CACHE_SCOPE.
+      XCODER_CACHE: ${XCODER_CACHE:-auto}
+      XCODER_REDIS_URL: ${XCODER_REDIS_URL:-redis://redis:6379}
+      XCODER_REDIS_PASSWORD_FILE: /secrets/redis_password
+      XCODER_CACHE_TTL_SECONDS: ${XCODER_CACHE_TTL_SECONDS:-86400}
     volumes:
-      - agi_secrets:/secrets:ro
+      - shared_secrets:/secrets:ro
       # Bakes in agent/config/llm.yaml (Ollama by default) — the Dockerfile doesn't COPY
       # agent/ into the image, so without this mount the container falls back to the
       # DeepSeek default compiled into loadConfig.ts.
@@ -122,7 +131,7 @@ services:
     container_name: ollama
     restart: unless-stopped
     ports:
-      - "11434:11434"
+      - "127.0.0.1:11434:11434"
     volumes:
       # Named volume rather than a ./ollama_models bind mount: model blobs are large, opaque,
       # and root-owned, and a bind mount drops them in the working tree where they get picked
@@ -181,6 +190,35 @@ services:
 
         echo "Model pull complete."
 
+  # ─── Redis (LLM response cache for chat and tasks) ───────────────────────────────
+  # Cache only: no persistence, bounded memory with LRU eviction, password-protected, and NOT published to the
+  # host. `api` does not depend on it being healthy: with Redis down xcoder works the same, just without caching.
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    user: redis
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - exec redis-server --requirepass "$$(cat /secrets/redis_password)" --maxmemory ${XCODER_REDIS_MAXMEMORY:-256mb} --maxmemory-policy allkeys-lru --save "" --appendonly no
+    volumes:
+      - shared_secrets:/secrets:ro
+    read_only: true
+    tmpfs: ["/tmp:rw,size=16m"]
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+    depends_on:
+      secrets-init: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD-SHELL", "REDISCLI_AUTH=\"$$(cat /secrets/redis_password)\" redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 320M
+
   # ─── CodeGraph (bundled, sibling services) ────────────────────────────────────
   # Runs as its own containers rather than inside the `api` container — the api image has no
   # Python runtime and never copies integrations/codegraph/ in, so a local spawn (what happens
@@ -210,7 +248,7 @@ services:
       - xcoder-codegraph-data:/data
     ports:
       # Exposed on the host for direct API/debugging access; remove if not needed.
-      - "${CODEGRAPH_API_PORT:-8801}:8000"
+      - "127.0.0.1:${CODEGRAPH_API_PORT:-8801}:8000"
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/', timeout=3)"]
       interval: 10s
@@ -242,7 +280,7 @@ services:
     ports:
       # Exposed on the host for debugging with an external MCP client; xcoder's `api` service
       # reaches this over the compose network regardless.
-      - "${CODEGRAPH_MCP_PORT:-8900}:8900"
+      - "127.0.0.1:${CODEGRAPH_MCP_PORT:-8900}:8900"
     deploy:
       resources:
         limits:
@@ -258,16 +296,18 @@ services:
   # Defaults to the offline scripted "mock" model (AGI_LLM_MODE=anthropic + ANTHROPIC_API_KEY for a real one).
   # Autonomous mode (token-capped loop) is OFF until an admin starts it in the UI (AGI > Schedule).
 
-  # One-shot: creates the two shared secrets on first start (random, 192-bit) and keeps them across restarts.
-  # AGI_API_TOKEN / SANDBOX_TOKEN in .env override the generated value (16+ chars).
-  agi-init:
+  # One-shot: creates the shared secrets on first start (random, 192-bit) and keeps them across restarts:
+  # xcoder<->agent, agent<->sandbox, and the Redis password. AGI_API_TOKEN / SANDBOX_TOKEN / REDIS_PASSWORD in
+  # .env override the generated value (16+ chars).
+  secrets-init:
     image: alpine:3.20
     restart: "no"
     environment:
       AGI_API_TOKEN: ${AGI_API_TOKEN:-}
       SANDBOX_TOKEN: ${SANDBOX_TOKEN:-}
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
     volumes:
-      - agi_secrets:/secrets
+      - shared_secrets:/secrets
     entrypoint: ["/bin/sh", "-c"]
     command:
       - |
@@ -284,7 +324,8 @@ services:
         }
         put agi_api_token "$$AGI_API_TOKEN"
         put sandbox_token "$$SANDBOX_TOKEN"
-        echo "agi secrets ready"
+        put redis_password "$$REDIS_PASSWORD"
+        echo "secrets ready"
     deploy:
       resources:
         limits:
@@ -310,7 +351,7 @@ services:
       MODEL_HARD: ${MODEL_HARD:-}
     volumes:
       - agi_data:/data
-      - agi_secrets:/secrets:ro
+      - shared_secrets:/secrets:ro
     read_only: true
     tmpfs: ["/tmp:rw,size=64m"]
     cap_drop: [ALL]
@@ -320,7 +361,7 @@ services:
     mem_limit: 1g
     networks: [default, agi_sandbox_net]
     depends_on:
-      agi-init: { condition: service_completed_successfully }
+      secrets-init: { condition: service_completed_successfully }
       agi-sandbox: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:7000/healthz"]
@@ -335,7 +376,7 @@ services:
     environment:
       SANDBOX_TOKEN_FILE: /secrets/sandbox_token
     volumes:
-      - agi_secrets:/secrets:ro
+      - shared_secrets:/secrets:ro
     user: "2000:2000"
     read_only: true
     tmpfs:
@@ -348,7 +389,7 @@ services:
     cpus: 1.0
     networks: [agi_sandbox_net]              # internal only: NO internet, NO route to the host
     depends_on:
-      agi-init: { condition: service_completed_successfully }
+      secrets-init: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "wget", "-qO-", "http://127.0.0.1:9000/healthz"]
       interval: 5s
@@ -372,4 +413,4 @@ volumes:
   xcoder-codegraph-data:
   ollama_storage:
   agi_data:
-  agi_secrets:
+  shared_secrets:

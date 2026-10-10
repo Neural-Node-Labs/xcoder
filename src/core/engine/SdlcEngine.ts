@@ -373,7 +373,7 @@ export function loadSdlcCheckpoint(cwd: string, taskId: string): SdlcCheckpoint 
 }
 
 /** Fences untrusted text so the model treats it as data, and neutralises attempts to close the fence. */
-function fence(tag: string, attrs: string, body: string, maxChars: number): string {
+export function fence(tag: string, attrs: string, body: string, maxChars: number): string {
   const clipped = body.length > maxChars ? `${body.slice(0, maxChars)}\n…[truncated ${body.length - maxChars} chars]` : body;
   const safe = clipped.replace(new RegExp(`</?${tag}`, "gi"), `<​${tag}`);
   return `<${tag}${attrs ? " " + attrs : ""}>\n${safe}\n</${tag}>`;

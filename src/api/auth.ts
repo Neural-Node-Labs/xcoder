@@ -1,5 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import crypto from "node:crypto";
+import { DEFAULT_TENANT_ID, isPlatformAdmin, isPlatformStaff, isSaasMode, type Role } from "../saas/roles.js";
+import { getTenant } from "../saas/tenantStore.js";
 
 /**
  * Token-based authentication middleware for the xcoder API.
@@ -14,7 +16,9 @@ import crypto from "node:crypto";
 interface TokenEntry {
   userId: string;
   username: string;
-  role: "admin" | "user";
+  role: Role;
+  /** Tenant the principal belongs to ("default" in single-tenant mode; "" for platform staff). */
+  tenantId: string;
   createdAt: string;
   /** Epoch ms after which this token is no longer valid. SECURITY: tokens previously never
    *  expired — a token issued once (or leaked once, e.g. via a logged request, an XSS bug in
@@ -43,7 +47,11 @@ export interface StoredUser {
    *  verifyPassword() can never accidentally succeed against it (an empty stored hash never
    *  parses into a valid scrypt/legacy format, so verifyPassword always returns false). */
   passwordHash: string;
-  role: "admin" | "user";
+  role: Role;
+  /** Owning tenant. Absent on legacy records = DEFAULT_TENANT_ID. Platform staff (saas_owner/saas_ops) have none. */
+  tenantId?: string;
+  /** Set when the account is disabled (tenant removed it / suspended); login is refused. */
+  disabled?: boolean;
   createdAt: string;
   /** "google" accounts authenticate exclusively via verifyGoogleLogin() below; "local" (the
    *  default, including every pre-existing user) authenticates via verifyLogin(). */
@@ -78,12 +86,13 @@ export function getUserStore(): StoredUser[] {
  * Generate a new token for a user and store it.
  * Returns the token string.
  */
-export function generateToken(userId: string, username: string, role: "admin" | "user" = "user"): string {
+export function generateToken(userId: string, username: string, role: Role = "user", tenantId: string = DEFAULT_TENANT_ID): string {
   const token = crypto.randomUUID();
   tokenStore.set(token, {
     userId,
     username,
     role,
+    tenantId,
     createdAt: new Date().toISOString(),
     expiresAt: Date.now() + TOKEN_TTL_MS,
   });
@@ -123,6 +132,20 @@ export function getTokensForUser(username: string): string[] {
     }
   }
   return tokens;
+}
+
+/** Revoke every live token of a user by id (usernames can be reused; ids cannot). Returns how many were revoked. */
+export function revokeTokensForUserId(userId: string): number {
+  let n = 0;
+  for (const [t, e] of tokenStore) if (e.userId === userId) { tokenStore.delete(t); n++; }
+  return n;
+}
+
+/** Revoke every token belonging to a tenant (suspend / delete / security incident). */
+export function revokeTokensForTenant(tenantId: string): number {
+  let n = 0;
+  for (const [t, e] of tokenStore) if (e.tenantId === tenantId && e.role !== "saas_owner" && e.role !== "saas_ops") { tokenStore.delete(t); n++; }
+  return n;
 }
 
 // ─── Password Hashing ───────────────────────────────────────────────────────
@@ -210,6 +233,7 @@ function timingSafeEqualHex(a: string, b: string): boolean {
 export function verifyLogin(username: string, password: string): StoredUser | null {
   const user = userStore.find((u) => u.username === username);
   if (!user) return null;
+  if (user.disabled) return null;
   if (user.authProvider === "google") return null; // no local password to check
   if (!verifyPassword(password, user.passwordHash)) return null;
   return user;
@@ -263,6 +287,26 @@ const TASK_RATE_LIMIT_MAX = Number(process.env.XCODER_TASK_RATE_MAX) > 0 ? Numbe
  */
 export function checkRateLimit(key: string): { limited: boolean; retryAfterMs?: number } {
   return checkRateLimitWithConfig(key, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_ATTEMPTS);
+}
+
+const IP_LOGIN_MAX = Number(process.env.XCODER_LOGIN_IP_MAX) > 0 ? Number(process.env.XCODER_LOGIN_IP_MAX) : 40;
+const USER_LOGIN_MAX = Number(process.env.XCODER_LOGIN_USER_MAX) > 0 ? Number(process.env.XCODER_LOGIN_USER_MAX) : 25;
+
+/**
+ * Login/credential-endpoint limiter with three independent buckets, so rotating either the
+ * username (password spraying from one IP) or the IP (distributed guessing of one account)
+ * still hits a cap: IP+username (tight), IP alone, and username alone (loose, so a stranger
+ * cannot trivially lock a real user out).
+ */
+export function checkLoginRateLimit(ip: string, username: string): { limited: boolean; retryAfterMs?: number } {
+  const u = username.trim().toLowerCase().slice(0, 200);
+  const checks = [
+    checkRateLimitWithConfig(`${ip}:${u}`, RATE_LIMIT_WINDOW_MS, RATE_LIMIT_MAX_ATTEMPTS),
+    checkRateLimitWithConfig(`login-ip:${ip}`, RATE_LIMIT_WINDOW_MS, IP_LOGIN_MAX),
+    checkRateLimitWithConfig(`login-user:${u}`, RATE_LIMIT_WINDOW_MS, USER_LOGIN_MAX),
+  ];
+  const hit = checks.filter((c) => c.limited);
+  return hit.length ? { limited: true, retryAfterMs: Math.max(...hit.map((c) => c.retryAfterMs ?? 0)) } : { limited: false };
 }
 
 /** Same mechanism as checkRateLimit, but scoped to per-user task submission with its own
@@ -373,6 +417,15 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
     return;
   }
 
+  // SaaS: a suspended/deleted tenant is cut off immediately, even for tokens already issued.
+  if (isSaasMode() && !isPlatformStaff(entry.role)) {
+    const t = getTenant(entry.tenantId);
+    if (!t || t.status !== "active") {
+      res.status(403).json({ success: false, error: !t || t.status === "deleted" ? "Tenant not found" : "Tenant suspended" });
+      return;
+    }
+  }
+
   // Attach user info to request for downstream use
   (req as any).user = entry;
 
@@ -391,7 +444,9 @@ export function authMiddleware(req: Request, res: Response, next: NextFunction):
  */
 export function requireAdmin(req: Request, res: Response, next: NextFunction): void {
   const user = (req as { user?: TokenEntry }).user;
-  if (!user || user.role !== "admin") {
+  // Legacy mode: the single admin. SaaS mode: PLATFORM admin only (the SaaS owner). The legacy "admin" string is
+  // never privileged in SaaS mode, and tenant admins use the tenant-scoped routes instead.
+  if (!user || !isPlatformAdmin(user.role)) {
     res.status(403).json({ success: false, error: "Admin privileges required" });
     return;
   }

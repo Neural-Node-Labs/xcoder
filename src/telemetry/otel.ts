@@ -171,6 +171,7 @@ export interface XcoderMetrics {
   timeouts: Counter;
   llmTokens: Counter;
   validationOutcomes: Counter;
+  cacheRequests: Counter;
   checkpointFailures: Counter;
 }
 
@@ -192,6 +193,7 @@ export function xcoderMetrics(): XcoderMetrics {
     timeouts: meter.createCounter("xcoder.sdlc.stage.timeouts", { description: "Sub-agent timeouts" }),
     llmTokens: meter.createCounter("xcoder.llm.tokens", { unit: "{token}", description: "LLM tokens consumed, by type" }),
     validationOutcomes: meter.createCounter("xcoder.sdlc.validation.outcomes", { description: "Validation Gate verdicts" }),
+    cacheRequests: meter.createCounter("xcoder.cache.requests", { description: "LLM response cache lookups, by result (hit/miss/bypass/error) and backend" }),
     checkpointFailures: meter.createCounter("xcoder.sdlc.checkpoint.failures", { description: "Failed attempts to persist SDLC state" }),
   };
   cached = { meterProviderTag: tag, m };

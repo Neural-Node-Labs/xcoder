@@ -201,3 +201,6 @@ ground originally.
 - Finding #3 (Dockerfile changes) is reviewed-by-inspection only — no Docker daemon available in
   this environment to build/run the images. Recommend a build-and-boot smoke test before relying
   on it in production.
+
+## Update — AGI per-tenant LLM config (2026-10)
+The AGI service now accepts its LLM connection at runtime (`GET/PUT /llm`, gateway-pushed; 409 while a run is in progress; the key is held in memory only and never returned). In SaaS mode tenants only reach AGI through an owner-provisioned dedicated instance (URL + sealed token); the shared platform instance is staff-only. An AGI restart falls back to its env defaults until the gateway's next `/agi/status` call re-pushes the config. See `SAAS_ISOLATION_AUDIT.md` (L5).

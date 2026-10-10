@@ -35,6 +35,10 @@ export interface AgiGatewayDeps {
   audit?(req: Request, action: string, summary: string, details?: Record<string, unknown>): void;
   env?: NodeJS.ProcessEnv;
   fetchImpl?: typeof fetch;
+  /** Which AGI instance serves the current request: undefined = the platform default (XCODER_AGI_URL), null = none available (tenant without a dedicated instance), or a dedicated target. Read inside the request's tenant context. */
+  target?(): { base: string; token: string; tenantId?: string } | null | undefined;
+  /** LLM connection to push to the instance the current request targets (null = leave the instance on its own defaults). */
+  llmPayload?(tenantId: string | undefined): Promise<Record<string, unknown> & { fp: string } | null>;
 }
 
 const ID_RE = /^[A-Za-z0-9_-]{1,64}$/;
@@ -63,13 +67,34 @@ const ok = (res: Response, data: unknown, status = 200) => res.status(status).js
 const fail = (res: Response, status: number, error: string) => res.status(status).json({ success: false, error });
 
 export function registerAgiRoutes(router: Router, deps: AgiGatewayDeps): void {
-  const cfg = () => agiConfig(deps.env);
+  const cfg = (): { base?: string; token: string; tenantId?: string } => {
+    const t = deps.target?.();
+    if (t === null) return { base: undefined, token: "" };
+    return t ?? agiConfig(deps.env);
+  };
+  /** Last LLM configuration pushed to each instance (by base URL). The instance reports what it has in /status, which corrects this after a restart. */
+  const pushed = new Map<string, string>();
   const doFetch = deps.fetchImpl ?? fetch;
   const sseByUser = new Map<string, number>();
   let sseTotal = 0;
 
+  /** Make sure the instance is using the connection the caller's tenant configured. Best effort: a failure leaves the instance on what it had. */
+  async function syncLlm(force = false): Promise<void> {
+    if (!deps.llmPayload) return;
+    const { base, token, tenantId } = cfg();
+    if (!base) return;
+    let p: Awaited<ReturnType<NonNullable<typeof deps.llmPayload>>>;
+    try { p = await deps.llmPayload(tenantId); } catch { return; }
+    if (!p || (!force && pushed.get(base) === p.fp)) return;
+    try {
+      const r = await doFetch(base + "/llm", { method: "PUT", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify(p), signal: AbortSignal.timeout(SHORT_TIMEOUT_MS), redirect: "error" });
+      if (r.ok) pushed.set(base, p.fp);
+    } catch { /* unreachable: the next request retries */ }
+  }
+
   /** Calls the AGI service. Never throws: returns {status, body} or a synthesized 502/503/504. */
   async function upstream(method: string, path: string, body: unknown, timeoutMs: number): Promise<{ status: number; body: any; synthetic?: boolean }> {
+    if (path !== "/llm" && path !== "/status") await syncLlm();
     const { base, token } = cfg();
     if (!base) return { status: 503, synthetic: true, body: { error: "AGI service is not configured (set XCODER_AGI_URL)" } };
     return withSpan("agi.proxy", { "http.request.method": method, "xcoder.agi.path": path.replace(/[A-Za-z0-9_-]{8,}/g, ":id") }, async (span) => {
@@ -115,7 +140,8 @@ export function registerAgiRoutes(router: Router, deps: AgiGatewayDeps): void {
     return void fail(res, status, redactAndTruncate(r.body?.error ?? `AGI request failed (${r.status})`, 300));
   }
 
-  const adminOnly: RequestHandler = (req, res, next) => requireAdmin(req, res, next);
+  // AGI admin = whoever deps.getUser says is one for THIS instance: the platform admin, or a tenant admin on their own dedicated instance.
+  const adminOnly: RequestHandler = (req, res, next) => (deps.getUser(req).isAdmin ? next() : requireAdmin(req, res, next));
   const wrap = (fn: (req: Request, res: Response) => Promise<void> | void): RequestHandler => (req, res, next) => {
     Promise.resolve(fn(req, res)).catch(next);
   };
@@ -133,8 +159,20 @@ export function registerAgiRoutes(router: Router, deps: AgiGatewayDeps): void {
     const { base } = cfg();
     const { isAdmin } = deps.getUser(req);
     if (!base) return void ok(res, { configured: false, isAdmin });
-    const r = await upstream("GET", "/status", undefined, 4_000);
+    let r = await upstream("GET", "/status", undefined, 4_000);
     if (r.status !== 200) return void ok(res, { configured: true, reachable: false, isAdmin, error: String(r.body?.error ?? `HTTP ${r.status}`) });
+    // The instance reports which LLM configuration it holds; if that is not the one this caller's tenant chose (first run,
+    // a changed setting, or the instance restarted), push it now and read the status again.
+    if (deps.llmPayload) {
+      try {
+        const want = await deps.llmPayload(cfg().tenantId);
+        if (want && (r.body as Json).llmFp !== want.fp) {
+          await syncLlm(true);
+          const again = await upstream("GET", "/status", undefined, 4_000);
+          if (again.status === 200) r = again;
+        }
+      } catch { /* status must not fail because of a sync problem */ }
+    }
     ok(res, { configured: true, reachable: true, isAdmin, ...(r.body as Json) });
   }));
 

@@ -112,11 +112,13 @@ async function uploadForm<T>(path: string, form: FormData): Promise<T> {
 
 // ─── Types (mirrors src/api/types.ts) ──────────────────────────────────────────────
 
+export type Role = "saas_owner" | "saas_ops" | "tenant_admin" | "tenant_user" | "admin" | "user";
+
 export interface LoginResponse {
   token: string;
   userId: string;
   username: string;
-  role: "admin" | "user";
+  role: Role;
 }
 
 export interface HealthResponse {
@@ -136,7 +138,12 @@ export interface EnginesResponse {
 export interface SessionResponse {
   userId: string;
   username: string;
-  role: "admin" | "user";
+  role: Role;
+  saasMode?: boolean;
+  tenantId?: string;
+  tenantName?: string;
+  /** Feature ids enabled for this principal. */
+  features?: string[];
   /** Epoch ms at which this token expires, so the client can log out on schedule rather than
    *  waiting to discover the expiry through a failed request mid-task. */
   expiresAt: number;
@@ -266,7 +273,7 @@ export interface Project {
 export interface User {
   id: string;
   username: string;
-  role: "admin" | "user";
+  role: Role;
   createdAt: string;
   authProvider?: "local" | "google";
   email?: string;
@@ -440,7 +447,76 @@ export interface AgiSchedule {
 }
 export type AgiSchedulePatch = Partial<Pick<AgiSchedule, "enabled" | "everyMinutes" | "dailyTokens" | "reset" | "tzOffsetMin">>;
 
+export interface CacheStats {
+  enabled: boolean; backend: "redis" | "memory" | "off"; ready: boolean; approxEntries: number | null;
+  hits: number; misses: number; bypassed: number; stored: number; errors: number; ttlSeconds: number; tokensSaved: number;
+}
+
+export interface FeatureInfo { id: string; label: string; description: string; kind: string; sensitive: boolean; platformOnly: boolean; platformEnabled: boolean; platformLocked: boolean; tenantEnabled?: boolean; effective?: boolean; canTenantToggle?: boolean }
+export interface PlanInfo { id: string; label: string; maxUsers: number; monthlyTokens: number; monthlyRequests: number; maxProjects: number }
+export interface UsageInfo { tokens: number; requests: number }
+export interface TenantSummary { agi?: { url: string; hasToken: boolean }; id: string; name: string; plan: string; status: "active" | "suspended" | "deleted"; suspendedReason?: string; createdAt: string; quota: PlanInfo; usage: UsageInfo; users: number; admins: string[]; features: Record<string, boolean>; effectiveFeatures: string[] }
+export interface TenantDetail extends TenantSummary { featureCatalog: FeatureInfo[]; userList: TenantUser[] }
+export interface TenantUser { id: string; username: string; role: Role; email?: string; authProvider?: string; disabled: boolean; createdAt: string; tenantId?: string }
+export interface SaasOverview { tenants: number; active: number; suspended: number; users: number; tokensThisMonth: number; requestsThisMonth: number; byPlan: Record<string, number> }
+export interface MyTenant { id: string; name: string; plan: string; status: string; quota: PlanInfo; usage: UsageInfo; users: number; features: FeatureInfo[]; role: Role }
+export interface SaasAuditEntry { id: string; timestamp: string; actorUsername: string; action: string; summary: string }
+export type CrmKind = "contacts" | "companies" | "deals" | "activities";
+export type CrmRecord = { id: string; createdAt: string; updatedAt: string } & Record<string, string | number | boolean | undefined>;
+export interface CrmSummary { contacts: number; companies: number; deals: number; openTasks: number; wonValue: number; openValue: number; pipeline: Record<string, { count: number; value: number }> }
+
+export type LlmSlot = "default" | "chat" | "task" | "agi";
+export interface LlmConnection { slot: LlmSlot; mode: "platform" | "custom"; provider?: string; base_url?: string; endpoint?: string; model?: string; max_tokens?: number; temperature?: number; thinking?: boolean; tier_models?: { easy?: string; medium?: string; hard?: string }; hasKey: boolean; updatedAt: string }
+export interface LlmConnectionInput { mode: "platform" | "custom"; provider?: string; base_url?: string; model?: string; max_tokens?: number; temperature?: number; tier_models?: { easy?: string; medium?: string; hard?: string }; /** string = set/replace, null = remove, omitted = keep */ apiKey?: string | null }
+export interface LlmEffective { available: boolean; source?: "tenant" | "platform"; ownKey?: boolean; provider?: string; model?: string; explicit?: boolean; error?: string }
+export interface LlmPolicy { tenantMayConfigure: boolean; platformFallback: boolean; allowPrivateUrls: boolean; allowedProviders: string[] }
+export interface LlmOverview { saasMode: boolean; policy: Partial<LlmPolicy>; connections: LlmConnection[]; effective: Record<"chat" | "task" | "agi", LlmEffective>; providers: Record<string, { base_url?: string; model: string }> }
+export interface LlmTestResult { ok: boolean; ms: number; model: string; provider: string; reply?: string; error?: string }
+export interface PlatformLlm { policy: LlmPolicy; default: { provider: string; model: string; base_url?: string; hasKey: boolean } | null; overrides: LlmConnection[]; providers: LlmOverview["providers"] }
+
 export const api = {
+  llmOverview: () => get<LlmOverview>("/llm/connections"),
+  llmSave: (slot: LlmSlot, b: LlmConnectionInput) => put<LlmConnection[]>(`/llm/connections/${slot}`, b),
+  llmRemove: (slot: LlmSlot) => del<LlmConnection[]>(`/llm/connections/${slot}`),
+  llmTest: (slot: LlmSlot) => post<LlmTestResult>(`/llm/connections/${slot}/test`),
+  saasLlm: () => get<PlatformLlm>("/saas/llm"),
+  saasLlmPolicy: (b: Partial<LlmPolicy>) => put<LlmPolicy>("/saas/llm/policy", b),
+  saasLlmSave: (slot: LlmSlot, b: LlmConnectionInput) => put<LlmConnection[]>(`/saas/llm/platform/${slot}`, b),
+  saasLlmRemove: (slot: LlmSlot) => del<LlmConnection[]>(`/saas/llm/platform/${slot}`),
+  saasLlmTest: (slot: LlmSlot) => post<LlmTestResult>(`/saas/llm/platform/${slot}/test`),
+  saasTenantLlm: (id: string) => get<{ connections: LlmConnection[]; agi: { url: string; hasToken: boolean } | null }>(`/saas/tenants/${id}/llm`),
+  saasTenantLlmReset: (id: string, slot: LlmSlot) => del<LlmConnection[]>(`/saas/tenants/${id}/llm/${slot}`),
+  saasSetTenantAgi: (id: string, b: { url: string; token?: string }) => put<{ url: string; hasToken: boolean }>(`/saas/tenants/${id}/agi`, b),
+  saasRemoveTenantAgi: (id: string) => del<{ removed: boolean }>(`/saas/tenants/${id}/agi`),
+  saasOverview: () => get<SaasOverview>("/saas/overview"),
+  saasPlans: () => get<PlanInfo[]>("/saas/plans"),
+  saasFeatures: () => get<FeatureInfo[]>("/saas/features"),
+  saasSetFeature: (id: string, enabled: boolean) => put<FeatureInfo[]>(`/saas/features/${id}`, { enabled }),
+  saasTenants: () => get<TenantSummary[]>("/saas/tenants"),
+  saasTenant: (id: string) => get<TenantDetail>(`/saas/tenants/${id}`),
+  saasCreateTenant: (b: { name: string; plan: string; adminUsername: string; adminPassword: string }) => post<TenantSummary>("/saas/tenants", b),
+  saasUpdateTenant: (id: string, b: { name?: string; plan?: string; features?: Record<string, boolean>; quotas?: Partial<Omit<PlanInfo, "id" | "label">> }) => put<TenantSummary>(`/saas/tenants/${id}`, b),
+  saasSuspend: (id: string, reason?: string) => post<TenantSummary>(`/saas/tenants/${id}/suspend`, { reason }),
+  saasReactivate: (id: string) => post<TenantSummary>(`/saas/tenants/${id}/reactivate`),
+  saasDeleteTenant: (id: string) => del<TenantSummary>(`/saas/tenants/${id}`),
+  saasResetAdmin: (id: string, password: string, username?: string) => post<{ username: string }>(`/saas/tenants/${id}/reset-admin-password`, { password, username }),
+  saasStaff: () => get<TenantUser[]>("/saas/staff"),
+  saasCreateStaff: (b: { username: string; password: string; role: "saas_owner" | "saas_ops" }) => post<TenantUser>("/saas/staff", b),
+  saasUpdateStaff: (id: string, b: { role?: "saas_owner" | "saas_ops"; disabled?: boolean; password?: string }) => put<TenantUser>(`/saas/staff/${id}`, b),
+  saasDeleteStaff: (id: string) => del<{ id: string }>(`/saas/staff/${id}`),
+  saasAudit: () => get<{ entries: SaasAuditEntry[] }>("/saas/audit"),
+  myTenant: () => get<MyTenant>("/tenant"),
+  tenantUsers: () => get<TenantUser[]>("/tenant/users"),
+  tenantCreateUser: (b: { username: string; password?: string; role: Role; authProvider?: "local" | "google"; email?: string }) => post<TenantUser>("/tenant/users", b),
+  tenantUpdateUser: (id: string, b: { role?: Role; disabled?: boolean; password?: string }) => put<TenantUser>(`/tenant/users/${id}`, b),
+  tenantDeleteUser: (id: string) => del<{ id: string }>(`/tenant/users/${id}`),
+  tenantSetFeatures: (features: Record<string, boolean>) => put<FeatureInfo[]>("/tenant/features", { features }),
+  tenantAudit: () => get<{ entries: SaasAuditEntry[] }>("/tenant/audit-log"),
+  crmSummary: () => get<CrmSummary>("/crm/summary"),
+  crmList: (kind: CrmKind, search?: string) => get<CrmRecord[]>(`/crm/${kind}${search ? `?search=${encodeURIComponent(search)}` : ""}`),
+  crmCreate: (kind: CrmKind, b: Record<string, unknown>) => post<CrmRecord>(`/crm/${kind}`, b),
+  crmUpdate: (kind: CrmKind, id: string, b: Record<string, unknown>) => put<CrmRecord>(`/crm/${kind}/${id}`, b),
+  crmDelete: (kind: CrmKind, id: string) => del<{ id: string }>(`/crm/${kind}/${id}`),
   agiStatus: () => get<AgiStatus>("/agi/status"),
   agiChat: (message: string, history: Array<{ role: "user" | "agent"; text: string }>) => post<AgiChatResult>("/agi/chat", { message, history }),
   agiGoal: () => get<AgiGoal>("/agi/goal"),
@@ -539,6 +615,8 @@ export const api = {
   platformIntegrations: () => get<{ integrations: PlatformIntegrationEntry[] }>("/platform/integrations"),
   connectCodegraph: (baseUrl: string, apiKey: string, defaultProjectId?: string) =>
     post<{ connected: true }>("/platform/integrations/codegraph", { baseUrl, apiKey, defaultProjectId }),
+  cacheStats: () => get<CacheStats>("/platform/cache"),
+  clearCache: () => del<{ removed: number }>("/platform/cache"),
   disconnectCodegraph: () => del<{ connected: false }>("/platform/integrations/codegraph"),
   codegraphStatus: () => get<CodegraphStatus>("/platform/integrations/codegraph/status"),
   startBundledCodegraph: () => post<CodegraphStatus>("/platform/integrations/codegraph/start"),

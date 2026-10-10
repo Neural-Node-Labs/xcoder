@@ -107,6 +107,8 @@ export interface LlmResponse {
    *  tool_calls arguments generated in a "length"-truncated response (e.g. a write_edit_tool
    *  content/newStr payload) may be truncated mid-value. See src/core/truncationGuard.ts. */
   finishReason?: "stop" | "length" | "tool_calls" | "content_filter" | string;
+  /** True when this answer came from the response cache (usage is then reported as zero). */
+  cacheHit?: boolean;
 }
 
 export interface LlmClient {

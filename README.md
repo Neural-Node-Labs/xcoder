@@ -36,6 +36,9 @@ docker compose up --build
 The bundled AGI DevOps agent (UI → Run a task → **AGI**) starts with it by default, with its own isolated sandbox and
 auto-generated secrets; see `integrations/agi/XCODER_INTEGRATION.md` (including how to turn it off).
 
+A Redis service is bundled too: it caches identical LLM calls for chat and tasks (exact-match, fail-open, password-protected,
+not published to the host). See the "LLM response cache" section of `.env.example`; admins can view stats and clear it in Settings.
+
 This starts four containers:
 
 | Service    | Description                                         | Port |
@@ -312,3 +315,9 @@ production bundle).
 > unrelated to the database/Docker work above. `SECURITY_REVIEW.md` confirms the same root
 > cause independently. Restoring `agent/` (or updating those tests' fixtures) will get the
 > `api` CI job fully green.
+
+## Multi-tenant SaaS
+
+Set `XCODER_SAAS_MODE=true` for roles (SaaS owner, SaaS operations, tenant admin, tenant user), tenants, plans/quotas, a per-tenant CRM, and switches to disable any feature platform-wide or per tenant. See `docs/SAAS.md` and `SAAS_ISOLATION_AUDIT.md` (including what is still open). Each tenant can have its own chat, task and AGI LLM connection (Settings), governed by an owner policy; set `XCODER_SECRET_KEY` to encrypt tenant keys.
+
+Security posture in SaaS mode (all covered by `src/saas/__tests__/saas.security.test.ts`): every endpoint except login/register/Google sign-in/logout/user-count/health requires a token; login is rate limited per IP+username, per IP and per username (`XCODER_LOGIN_IP_MAX`, `XCODER_LOGIN_USER_MAX`); set `XCODER_TRUST_PROXY=1` behind nginx; all SQL is parameterised; tenants are confined to their own projects and cannot reach each other's workspace, plans, CRM, LLM keys or AGI. Prompt injection is mitigated (untrusted-content rule, fenced SDLC inputs, confined and feature-gated tools), not eliminable. See `SAAS_ISOLATION_AUDIT.md`.

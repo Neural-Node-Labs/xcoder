@@ -1,5 +1,5 @@
 import { createContext, useContext, useState, useCallback, useEffect, useRef, ReactNode } from "react";
-import { api, setAuthToken, getAuthToken, setUnauthorizedHandler } from "../api/client";
+import { api, setAuthToken, getAuthToken, setUnauthorizedHandler, type Role } from "../api/client";
 
 /**
  * Session lifecycle.
@@ -34,11 +34,14 @@ type AuthStatus = "checking" | "authenticated" | "anonymous";
 interface AuthState {
   userId: string | null;
   username: string | null;
-  role: "admin" | "user" | null;
+  role: Role | null;
   token: string | null;
 }
 
-interface AuthContextValue extends AuthState {
+/** SaaS context from /auth/me. `features` undefined = not yet known (treat as legacy: everything permitted client-side; the server decides). */
+interface SaasInfo { saasMode: boolean; tenantName?: string; features?: string[] }
+
+interface AuthContextValue extends AuthState, SaasInfo {
   /** "checking" while a restored token is being verified — the app must render a neutral
    *  loading state rather than either the login page or the signed-in shell, since showing
    *  the login page to an already-signed-in user is just as wrong as the reverse. */
@@ -59,7 +62,7 @@ function loadInitial(): AuthState {
   const token = getAuthToken();
   const userId = localStorage.getItem("xcoder_user_id");
   const username = localStorage.getItem("xcoder_username");
-  const role = localStorage.getItem("xcoder_role") as "admin" | "user" | null;
+  const role = localStorage.getItem("xcoder_role") as Role | null;
   return { token, userId, username, role };
 }
 
@@ -69,6 +72,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // verification, so skip straight to "anonymous" and avoid a pointless loading flash.
   const [status, setStatus] = useState<AuthStatus>(() => (getAuthToken() ? "checking" : "anonymous"));
   const [sessionExpired, setSessionExpired] = useState(false);
+  const [saas, setSaas] = useState<SaasInfo>({ saasMode: false });
 
   const expiryTimer = useRef<number | null>(null);
   // Guards against a stale async /auth/me response clobbering newer state — e.g. the boot check
@@ -94,6 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("xcoder_username");
     localStorage.removeItem("xcoder_role");
     setState({ token: null, userId: null, username: null, role: null });
+    setSaas({ saasMode: false });
     setSessionExpired(expired);
     setStatus("anonymous");
   }, []);
@@ -118,7 +123,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const persist = useCallback(
-    (token: string, userId: string, username: string, role: "admin" | "user") => {
+    (token: string, userId: string, username: string, role: Role) => {
       generation.current += 1;
       setAuthToken(token);
       localStorage.setItem("xcoder_user_id", userId);
@@ -158,6 +163,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           username: session.username,
           role: session.role,
         }));
+        setSaas({ saasMode: !!session.saasMode, tenantName: session.tenantName, features: session.features });
         setStatus("authenticated");
         scheduleExpiry(session.expiresAt);
       } catch {
@@ -240,7 +246,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider
-      value={{ ...state, status, sessionExpired, login, register, loginWithGoogle, logout }}
+      value={{ ...state, ...saas, status, sessionExpired, login, register, loginWithGoogle, logout }}
     >
       {children}
     </AuthContext.Provider>

@@ -1,7 +1,7 @@
 {
   "name": "xcoder",
   "version": "0.1.0",
-  "description": "xcoder \u2014 a DAG-based SDLC orchestration agent. Ships with a ReAct CLI, an HTTP API, and a web dashboard, with hot-pluggable role skills and a Validation Gate that never trusts a sub-agent's own self-report.",
+  "description": "xcoder — a DAG-based SDLC orchestration agent. Ships with a ReAct CLI, an HTTP API, and a web dashboard, with hot-pluggable role skills and a Validation Gate that never trusts a sub-agent's own self-report.",
   "type": "module",
   "bin": {
     "xcoder": "dist/cli/index.js"
@@ -49,6 +49,7 @@
     "js-yaml": "^4.1.0",
     "multer": "^1.4.5-lts.1",
     "pg": "^8.13.0",
+    "redis": "^5.12.1",
     "ssh2": "^1.16.0",
     "ts-morph": "^24.0.0",
     "typescript": "^5.6.3"

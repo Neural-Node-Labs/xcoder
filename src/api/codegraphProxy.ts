@@ -30,6 +30,8 @@ import https from "node:https";
 import type { Request, Response } from "express";
 import { getCodegraphConnection } from "./codegraphKeyStore.js";
 import { validateToken } from "./auth.js";
+import { isPlatformStaff, isSaasMode } from "../saas/roles.js";
+import { platformEnabled } from "../saas/features.js";
 
 /** Cookie name shared with routes.ts (set on login/register/google-login, cleared on logout). */
 export const XCODER_PROXY_COOKIE = "xcoder_proxy_token";
@@ -46,15 +48,22 @@ function readCookie(req: Request, name: string): string | null {
 }
 
 function isAuthorized(req: Request): boolean {
+  // One shared CodeGraph with one admin key: in SaaS mode only platform staff may use it, and only while it is switched on.
+  const allowed = (t: string): boolean => {
+    const e = validateToken(t);
+    if (!e) return false;
+    if (!platformEnabled("codegraph")) return false;
+    return !isSaasMode() || isPlatformStaff(e.role);
+  };
   const cookieToken = readCookie(req, XCODER_PROXY_COOKIE);
-  if (cookieToken && validateToken(cookieToken)) return true;
+  if (cookieToken && allowed(cookieToken)) return true;
   // Also accept a normal xcoder Bearer token, for non-browser callers (curl, scripts) that
   // don't carry cookies at all — cookies remain the primary path since that's what the actual
   // embedded-iframe traffic uses.
   const header = req.headers.authorization;
   if (header) {
     const parts = header.split(" ");
-    if (parts.length === 2 && parts[0] === "Bearer" && validateToken(parts[1])) return true;
+    if (parts.length === 2 && parts[0] === "Bearer" && allowed(parts[1])) return true;
   }
   return false;
 }

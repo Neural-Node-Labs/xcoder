@@ -1,5 +1,6 @@
 import type { DatabaseClient } from "../db/types.js";
 import { createConnection } from "../db/connection.js";
+import { requireTenantId } from "../saas/guards.js";
 
 /**
  * A WBS entry stored in the database.
@@ -41,7 +42,8 @@ export class WbsStore {
           phase_title TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'pending',
           created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          tenant_id TEXT NOT NULL DEFAULT 'default'
         );
 
         CREATE INDEX IF NOT EXISTS idx_wbs_entries_task_id ON wbs_entries(task_id);
@@ -58,16 +60,17 @@ export class WbsStore {
     try {
       if (!this.db.initialized) await this.init();
       const now = new Date().toISOString();
+      const tenant = requireTenantId(); // throws (-> caught, nothing written) when a SaaS request has no tenant scope
 
       for (const entry of entries) {
         const id = `wbs_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${entry.phaseNumber}`;
         await this.db.query(
-          `INSERT INTO wbs_entries (id, task_id, task_description, phase_number, phase_title, status, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+          `INSERT INTO wbs_entries (id, task_id, task_description, phase_number, phase_title, status, created_at, updated_at, tenant_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
            ON CONFLICT (id) DO UPDATE SET
              status = EXCLUDED.status,
              updated_at = EXCLUDED.updated_at`,
-          [id, entry.taskId, entry.taskDescription, entry.phaseNumber, entry.phaseTitle, entry.status, now, now]
+          [id, entry.taskId, entry.taskDescription, entry.phaseNumber, entry.phaseTitle, entry.status, now, now, tenant]
         );
       }
 
@@ -88,8 +91,8 @@ export class WbsStore {
         `SELECT id, task_id as "taskId", task_description as "taskDescription",
                 phase_number as "phaseNumber", phase_title as "phaseTitle",
                 status, created_at as "createdAt", updated_at as "updatedAt"
-         FROM wbs_entries WHERE id = $1`,
-        [id]
+         FROM wbs_entries WHERE id = $1 AND tenant_id = $2`,
+        [id, requireTenantId()]
       );
       return result.rows[0] ?? null;
     } catch (err) {
@@ -107,8 +110,8 @@ export class WbsStore {
       const now = new Date().toISOString();
       const result = await this.db.query(
         `UPDATE wbs_entries SET status = $1, updated_at = $2
-         WHERE task_id = $3 AND phase_number = $4`,
-        [status, now, taskId, phaseNumber]
+         WHERE task_id = $3 AND phase_number = $4 AND tenant_id = $5`,
+        [status, now, taskId, phaseNumber, requireTenantId()]
       );
       return (result.rowCount ?? 0) > 0;
     } catch (err) {
@@ -127,8 +130,8 @@ export class WbsStore {
         `SELECT id, task_id as "taskId", task_description as "taskDescription",
                 phase_number as "phaseNumber", phase_title as "phaseTitle",
                 status, created_at as "createdAt", updated_at as "updatedAt"
-         FROM wbs_entries WHERE task_id = $1 ORDER BY phase_number ASC`,
-        [taskId]
+         FROM wbs_entries WHERE task_id = $1 AND tenant_id = $2 ORDER BY phase_number ASC`,
+        [taskId, requireTenantId()]
       );
       return result.rows;
     } catch (err) {

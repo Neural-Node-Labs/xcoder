@@ -334,7 +334,7 @@ export interface SkillListEntry {
 export interface User {
   id: string;
   username: string;
-  role: "admin" | "user";
+  role: import("../saas/roles.js").Role;
   createdAt: string;
   /** How this account authenticates. "google" accounts have no local password and can only
    *  log in via Sign in with Google. Defaults to "local" for existing/legacy accounts. */
@@ -349,7 +349,7 @@ export interface CreateUserRequest {
    *  identified by email and only ever authenticate through Google's own sign-in flow. */
   username?: string;
   password?: string;
-  role?: "admin" | "user";
+  role?: import("../saas/roles.js").Role;
   /** "google" pre-links this account to a Google identity by email instead of a password — the
    *  user then signs in with the "Sign in with Google" button. Defaults to "local". */
   authProvider?: "local" | "google";
@@ -360,7 +360,7 @@ export interface CreateUserRequest {
 /** PUT /api/v1/users/:id request body. */
 export interface UpdateUserRequest {
   username?: string;
-  role?: "admin" | "user";
+  role?: import("../saas/roles.js").Role;
 }
 
 /** POST /api/v1/login request body. */
@@ -374,7 +374,7 @@ export interface LoginResponse {
   token: string;
   userId: string;
   username: string;
-  role: "admin" | "user";
+  role: import("../saas/roles.js").Role;
 }
 
 /** GET /api/v1/auth/me response data. Returned only for a token that is currently valid and
@@ -385,10 +385,16 @@ export interface LoginResponse {
 export interface SessionResponse {
   userId: string;
   username: string;
-  role: "admin" | "user";
+  role: import("../saas/roles.js").Role;
   /** Epoch ms at which this token expires. Lets the client schedule its own pre-emptive
    *  logout instead of waiting to discover the expiry through a failed request. */
   expiresAt: number;
+  /** SaaS additions (absent/false in single-tenant mode). */
+  saasMode?: boolean;
+  tenantId?: string;
+  tenantName?: string;
+  /** Feature ids enabled for this principal (module and capability switches). */
+  features?: string[];
 }
 
 /** POST /api/v1/auth/google request body. Sent by the frontend after Google Identity Services

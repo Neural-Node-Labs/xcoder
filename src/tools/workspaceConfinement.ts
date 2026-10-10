@@ -1,4 +1,6 @@
+import fs from "node:fs";
 import path from "node:path";
+import { isSaasMode } from "../saas/roles.js";
 
 /**
  * Opt-in path confinement for read_tool/write_edit_tool.
@@ -17,7 +19,8 @@ import path from "node:path";
  * keep working unchanged.
  */
 export function isWorkspaceConfinementEnabled(): boolean {
-  return process.env.XCODER_RESTRICT_TO_WORKSPACE === "true";
+  // Multi-tenant: always on (an explicit XCODER_RESTRICT_TO_WORKSPACE=false cannot weaken it).
+  return isSaasMode() || process.env.XCODER_RESTRICT_TO_WORKSPACE === "true";
 }
 
 export class WorkspaceEscapeError extends Error {
@@ -46,6 +49,15 @@ export function resolveConfinedPath(filePath: string, cwd: string): string {
 
   const escapes = relative.startsWith("..") || path.isAbsolute(relative);
   if (escapes) throw new WorkspaceEscapeError(filePath, resolvedCwd);
+
+  // Symlink-safe: resolve the deepest EXISTING ancestor through the filesystem and re-check, so a link inside the
+  // workspace that points outside it (ws/link -> /etc) cannot be used to read or write beyond the root.
+  let real = resolvedFull; const tail: string[] = [];
+  while (!fs.existsSync(real) && path.dirname(real) !== real) { tail.unshift(path.basename(real)); real = path.dirname(real); }
+  let realRoot: string; try { realRoot = fs.realpathSync(resolvedCwd); } catch { realRoot = resolvedCwd; }
+  let realFull: string; try { realFull = path.join(fs.realpathSync(real), ...tail); } catch { realFull = resolvedFull; }
+  const rel2 = path.relative(realRoot, realFull);
+  if (rel2.startsWith("..") || path.isAbsolute(rel2)) throw new WorkspaceEscapeError(filePath, resolvedCwd);
 
   return resolvedFull;
 }

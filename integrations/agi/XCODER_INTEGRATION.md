@@ -13,16 +13,16 @@ The AGI's safety comes from process/container boundaries: a root supervisor laun
 
 ## Enabled by default
 The AGI services are part of the main `docker-compose.yml`, so a plain `docker compose up -d --build` starts them
-(`agi-init`, `agi`, `agi-sandbox`, `agi-jaeger`); `docker-compose.prod.yml` layers on top as before.
+(`secrets-init`, `agi`, `agi-sandbox`, `agi-jaeger`); `docker-compose.prod.yml` layers on top as before.
 
-* **Secrets need no setup.** `agi-init` generates both shared secrets (192-bit random) on first start and keeps them in
-  the `agi_secrets` volume; the services read them from files (`*_FILE`). Put `AGI_API_TOKEN` / `SANDBOX_TOKEN` (16+
+* **Secrets need no setup.** `secrets-init` generates both shared secrets (192-bit random) on first start and keeps them in
+  the `shared_secrets` volume; the services read them from files (`*_FILE`). Put `AGI_API_TOKEN` / `SANDBOX_TOKEN` (16+
   chars) in `.env` to pin your own. The agent still refuses to start with a missing or placeholder secret.
 * **Offline mock model by default.** Set `AGI_LLM_MODE=anthropic` and `ANTHROPIC_API_KEY` for real work.
 * **Autonomous mode stays off** until an admin starts it in AGI → Schedule, so nothing spends tokens by itself.
 * **xcoder does not depend on the agent.** If it is down the tab shows "unreachable" and everything else works.
 * **Opt out:** `XCODER_AGI_URL=off` in `.env`, and start with
-  `--scale agi=0 --scale agi-sandbox=0 --scale agi-jaeger=0 --scale agi-init=0`.
+  `--scale agi=0 --scale agi-sandbox=0 --scale agi-jaeger=0 --scale secrets-init=0`.
 
 Nothing publishes a host port except Jaeger on `127.0.0.1:16686`. With the gateway disabled the tab shows setup instructions and the gateway answers 503.
 
@@ -46,6 +46,9 @@ Every admin mutation is written to xcoder's audit log as `agi.*`. Approvals of d
 - Upstream 5xx bodies (stack traces, paths) are replaced with a generic message; upstream 4xx meaning (423 kill switch, 409 busy) is preserved.
 - SSE: max 3 streams per admin / 20 total, aborted on client disconnect, `X-Accel-Buffering: no`; nginx has an unbuffered 1 h location for it. The browser reads it with `fetch` streaming (EventSource can't send `Authorization`), so no token ever appears in a URL.
 - Each proxied call is an OpenTelemetry span (`agi.proxy`) when xcoder's OTel is enabled.
+
+## Per-tenant LLM and dedicated instances (SaaS)
+`PUT /llm` (admin token) sets provider, base URL, key and per-tier models at runtime; `GET /llm` and `/status` (`llmMode`, `llmFp`, `llmModels`) never expose the key. The gateway pushes the config for the right instance whenever the instance's fingerprint differs from the wanted one. In SaaS mode the owner attaches a dedicated instance per tenant (`PUT /saas/tenants/:id/agi`); tenants cannot use the shared instance.
 
 ## Changes to the vendored code
 Only: `AGI_API_TOKEN` bearer check on every route except `/healthz`; `REQUIRE_API_TOKEN=1` startup guard (weak/placeholder `AGI_API_TOKEN` or `SANDBOX_TOKEN` ⇒ exit 1); the standalone React UI and static serving were removed (the tab replaces them). Upstream's own limits still apply — see `UPSTREAM_README.md` ("Honest limits"): capability is the base model's, only 8 eval scenarios, container isolation is not a VM (use gVisor/Kata + an egress firewall for untrusted workloads), and the sandbox simulates DevOps with files and shell — no real Kubernetes/cloud.

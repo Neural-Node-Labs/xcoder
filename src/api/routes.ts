@@ -6,11 +6,12 @@ import crypto from "node:crypto";
 import { OrchestratorOptions } from "../core/orchestrator.js";
 import { createEngine, DEFAULT_ENGINE, listEngines } from "../core/engine/EngineRegistry.js";
 import { createLlmClient } from "../llm/deepseekClient.js";
+import { getCacheStats, clearCache } from "../cache/index.js";
 import { createTelemetry, initOpenTelemetry } from "../telemetry/index.js";
 import { loadLlmConfig } from "../config/loadConfig.js";
 import { resolveLogsDir } from "../config/paths.js";
 import { SkillRegistry } from "../core/skillRegistry.js";
-import { authMiddleware, requireAdmin, verifyLogin, findGoogleUser, generateToken, revokeToken, setUserStore, getUserStore, hashPassword, isLegacyHash, checkRateLimit, checkTaskRateLimit, checkWorkspaceRateLimit, TOKEN_TTL_MS, StoredUser } from "./auth.js";
+import { revokeTokensForUserId, authMiddleware, requireAdmin, verifyLogin, findGoogleUser, generateToken, revokeToken, setUserStore, getUserStore, hashPassword, isLegacyHash, checkRateLimit, checkLoginRateLimit, checkTaskRateLimit, checkWorkspaceRateLimit, TOKEN_TTL_MS, StoredUser } from "./auth.js";
 import { verifyGoogleIdToken, isGoogleSignInConfigured, getGoogleClientId } from "./googleAuth.js";
 import { loadPersistedUsers, persistUsers, nextUserIdAfter } from "./userStorePersistence.js";
 import { registerProjectRoutes } from "./projectRoutes.js";
@@ -28,6 +29,19 @@ import { TOOL_SCHEMAS } from "../tools/toolSchemas.js";
 import { runSecurityTool } from "../tools/securityOpsTool.js";
 import { getAllowlist, setAllowlist } from "./securityOpsAllowlistStore.js";
 import { appendAuditLog, readAuditLog } from "./auditLog.js";
+import { appendTenantAudit } from "../saas/audit.js";
+import { migrateUsersForSaas } from "../saas/migrate.js";
+import { registerSaasRoutes } from "../saas/routes.js";
+import { registerLlmRoutes } from "../llm/connectionRoutes.js";
+import { registerCrmRoutes } from "../saas/crm/routes.js";
+import { metered } from "../saas/metering.js";
+import { currentTenant } from "../saas/context.js";
+import { open as openSecret } from "../llm/secretBox.js";
+import { agiPayloadFor, resolveLlm, purposeForEngine, LlmNotConfiguredError, type Purpose, type Resolved } from "../llm/connections.js";
+import { tenantGate } from "../saas/gate.js";
+import { DEFAULT_TENANT_ID, isPlatformAdmin, isPlatformStaff, isSaasMode, isTenantMember } from "../saas/roles.js";
+import { effectiveFeatures } from "../saas/features.js";
+import { getTenant } from "../saas/tenantStore.js";
 import { getLlmConfigSummary, updateLlmConfig, knownProviders, KNOWN_PROVIDER_DEFAULTS } from "./llmConfigStore.js";
 import { listWorkspaceDirectory, readWorkspaceFile, writeWorkspaceFile, createWorkspaceDirectory, deleteWorkspacePath, extractZipIntoWorkspace } from "./workspaceFiles.js";
 import { readTaskHistory } from "../core/taskHistory.js";
@@ -106,9 +120,11 @@ export function createRouter(): Router {
   /** The authenticated caller, attached by authMiddleware before any route in this router
    *  runs. See projectRoutes.ts's identical helper for why this is read from the verified
    *  token rather than any client-supplied field. */
-  function authedUser(req: Request): { userId: string; isAdmin: boolean } {
-    const user = (req as { user?: { userId: string; role: "admin" | "user" } }).user;
-    return { userId: user?.userId ?? "", isAdmin: user?.role === "admin" };
+  function authedUser(req: Request): { userId: string; isAdmin: boolean; tenantId: string } {
+    const user = (req as { user?: { userId: string; role: string; tenantId?: string } }).user;
+    // SaaS: nobody (owner, ops, tenant admin) gets the "see every user's project" override. It was the only
+    // cross-owner read path in the project store; tenant admins manage people, not other people's code.
+    return { userId: user?.userId ?? "", isAdmin: !isSaasMode() && user?.role === "admin", tenantId: user?.tenantId || DEFAULT_TENANT_ID };
   }
 
   /** Like authedUser() but also surfaces the username, for audit-log entries where "which user
@@ -122,6 +138,9 @@ export function createRouter(): Router {
    *  not a per-project one, same scope as the existing /telemetry route's thinking.log/sys.log. */
   function recordAudit(req: Request, action: string, summary: string, details?: Record<string, unknown>): void {
     const { actorId, actorUsername } = auditActor(req);
+    const u = (req as { user?: { role?: string; tenantId?: string } }).user;
+    // SaaS: tenant members' actions go to THEIR tenant's log only; the platform log holds staff actions.
+    if (isSaasMode() && isTenantMember(u?.role) && u?.tenantId) { appendTenantAudit(u.tenantId, { actorId, actorUsername, action, summary, details }); return; }
     appendAuditLog(process.cwd(), { actorId, actorUsername, action, summary, details });
   }
 
@@ -149,6 +168,16 @@ export function createRouter(): Router {
     res.clearCookie(XCODER_PROXY_COOKIE, { path: "/codegraph-api" });
   }
 
+  /** Resolve the LLM connection for this caller + purpose, or answer 422 and return null. */
+  async function connectionFor(req: Request, res: Response, purpose: Purpose): Promise<Resolved | null> {
+    try {
+      return await resolveLlm(purpose, authedUser(req).tenantId);
+    } catch (err) {
+      if (err instanceof LlmNotConfiguredError) { res.status(422).json({ success: false, error: err.message, code: "llm_not_configured" } as ApiResponse); return null; }
+      throw err;
+    }
+  }
+
   function resolveProjectCwd(userId: string, isAdmin: boolean, projectId?: string): { cwd: string; error?: string } {
     if (projectId) {
       const project = getProject(projectId, userId, { allowAnyOwner: isAdmin });
@@ -157,6 +186,8 @@ export function createRouter(): Router {
     }
     const active = getActiveProject(userId);
     if (active) return { cwd: active.path };
+    // SaaS: process.cwd() is the platform's own checkout (source, .env, other tenants' logs). Never a fallback.
+    if (isSaasMode()) return { cwd: process.cwd(), error: "No project selected. Create or select a project first." };
     return { cwd: process.cwd() };
   }
 
@@ -185,12 +216,15 @@ export function createRouter(): Router {
    * good the output is. Quietly substituting a different model would leave the caller believing
    * they got the one they picked. Returns an error string for the route to turn into a 400.
    */
-  async function resolveModelOverride(requested: unknown): Promise<{ model?: string; error?: string }> {
+  async function resolveModelOverride(requested: unknown, ownConnection = false): Promise<{ model?: string; error?: string }> {
     if (requested === undefined || requested === null) return {};
     if (typeof requested !== "string" || requested.trim().length === 0) {
       return { error: "'model' must be a non-empty string" };
     }
     const wanted = requested.trim();
+    // A tenant's own connection (own key, own account): any well-formed model name is theirs to spend on. The allowlist
+    // below describes the PLATFORM's provider and would reject (or wrongly allow) models of someone else's account.
+    if (ownConnection) return /^[A-Za-z0-9._:/@+-]{1,120}$/.test(wanted) ? { model: wanted } : { error: "'model' contains invalid characters" };
     const available = await listModels();
     if (!isAllowedModel(wanted, available.models)) {
       return { error: `Unknown model '${wanted}'. Available: ${available.models.join(", ")}` };
@@ -214,8 +248,7 @@ export function createRouter(): Router {
       return;
     }
 
-    const rateLimitKey = `${req.ip}:${username.trim().toLowerCase()}`;
-    const { limited, retryAfterMs } = checkRateLimit(rateLimitKey);
+    const { limited, retryAfterMs } = checkLoginRateLimit(String(req.ip), username);
     if (limited) {
       const body: ApiResponse = {
         success: false,
@@ -239,7 +272,7 @@ export function createRouter(): Router {
       verifiedUser.passwordHash = hashPassword(password);
     }
 
-    const token = generateToken(verifiedUser.id, verifiedUser.username, verifiedUser.role);
+    const token = generateToken(verifiedUser.id, verifiedUser.username, verifiedUser.role, verifiedUser.tenantId ?? DEFAULT_TENANT_ID);
     setProxyCookie(req, res, token);
     const data: LoginResponse = { token, userId: verifiedUser.id, username: verifiedUser.username, role: verifiedUser.role };
     const body: ApiResponse<LoginResponse> = { success: true, data };
@@ -297,6 +330,8 @@ export function createRouter(): Router {
 
   // All other routes require auth
   router.use(authMiddleware);
+  // Tenant context + SaaS route policy + feature switches for everything below (see saas/gate.ts).
+  router.use(tenantGate);
 
   // Project and plan routes — registered HERE, after authMiddleware, so every one of them
   // requires a valid token. See the note at the top of createRouter() for what went wrong
@@ -306,7 +341,20 @@ export function createRouter(): Router {
   // AGI DevOps harness gateway (integrations/agi) — authenticated, role-gated, validated proxy.
   // Registered after authMiddleware for the same reason as the two above. See agiProxy.ts.
   registerAgiRoutes(router, {
-    getUser: authedUser,
+    // AGI admin = platform admin (legacy admin, or the SaaS owner). authedUser()'s isAdmin is deliberately false in SaaS mode.
+    // isAdmin: the platform admin (legacy admin / SaaS owner), or a tenant admin — who can only reach /agi at all when the
+    // tenant has its OWN dedicated instance (saas/gate.ts + features.ts), never the shared one.
+    getUser: (req) => { const u = (req as { user?: { userId: string; role: string } }).user; return { userId: u?.userId ?? "", isAdmin: isPlatformAdmin(u?.role) || (isSaasMode() && u?.role === "tenant_admin") }; },
+    target: () => {
+      if (!isSaasMode()) return undefined;
+      const c = currentTenant();
+      if (!c || isPlatformStaff(c.role)) return undefined;
+      const t = getTenant(c.tenantId);
+      if (!t?.agi) return null;
+      return { base: new URL(t.agi.url).origin, token: openSecret(t.agi.token) ?? "", tenantId: t.id };
+    },
+    // Staff and legacy mode use the platform instance; a tenant uses its own. null = nothing explicit configured.
+    llmPayload: (tenantId) => (!isSaasMode() ? agiPayloadFor(DEFAULT_TENANT_ID) : agiPayloadFor(tenantId ?? null)) as Promise<(Record<string, unknown> & { fp: string }) | null>,
     checkTaskRateLimit,
     audit: (req, action, summary, details) => recordAudit(req, action, summary, details),
   });
@@ -326,7 +374,12 @@ export function createRouter(): Router {
   // ─── Available models ──────────────────────────────────────────────────
   // Backs the Chat tab's model picker. See ollamaModels.ts for why this never returns an
   // empty list even when Ollama is unreachable.
-  router.get("/models", async (_req: Request, res: Response) => {
+  router.get("/models", async (req: Request, res: Response) => {
+    // A tenant with its own chat connection picks from ITS provider, not the platform's Ollama list.
+    try {
+      const conn = await resolveLlm("chat", authedUser(req).tenantId);
+      if (conn.byo) { res.json({ success: true, data: { models: [conn.config.model], default: conn.config.model, source: "config" } } as ApiResponse); return; }
+    } catch { /* fall through to the platform list */ }
     const data = await listModels();
     res.json({ success: true, data } as ApiResponse<ModelListResult>);
   });
@@ -342,7 +395,7 @@ export function createRouter(): Router {
   // Doing no work beyond reading what authMiddleware already validated is deliberate: the
   // useful signal here is entirely in the status code (200 = good, 401/403 = drop the session).
   router.get("/auth/me", (req: Request, res: Response) => {
-    const user = (req as { user?: { userId: string; username: string; role: "admin" | "user"; expiresAt: number } }).user;
+    const user = (req as { user?: { userId: string; username: string; role: import("../saas/roles.js").Role; tenantId?: string; expiresAt: number } }).user;
     if (!user) {
       // Unreachable in practice — authMiddleware runs first and rejects anything without a
       // valid token — but returning 401 rather than an empty 200 keeps the "no session" answer
@@ -355,6 +408,10 @@ export function createRouter(): Router {
       username: user.username,
       role: user.role,
       expiresAt: user.expiresAt,
+      saasMode: isSaasMode(),
+      tenantId: isSaasMode() && isPlatformStaff(user.role) ? undefined : user.tenantId,
+      tenantName: isSaasMode() && !isPlatformStaff(user.role) ? getTenant(user.tenantId)?.name : undefined,
+      features: effectiveFeatures(user.role, isSaasMode() && !isPlatformStaff(user.role) ? getTenant(user.tenantId) : undefined),
     };
     res.json({ success: true, data } as ApiResponse<SessionResponse>);
   });
@@ -421,17 +478,18 @@ export function createRouter(): Router {
       res.status(404).json({ success: false, error: projectError } as ApiResponse);
       return;
     }
-    const { model: overrideModel, error: modelError } = await resolveModelOverride(model);
+    const conn = await connectionFor(req, res, purposeForEngine(engine));
+    if (!conn) return;
+    const { model: overrideModel, error: modelError } = await resolveModelOverride(model, conn.byo);
     if (modelError) {
       res.status(400).json({ success: false, error: modelError } as ApiResponse);
       return;
     }
 
     const telemetry = createTelemetry(cwd);
-    const llmConfig = loadLlmConfig();
-    applyStoredApiKey(llmConfig);
+    const llmConfig = conn.config;
     if (overrideModel) llmConfig.model = overrideModel;
-    const llm = createLlmClient(llmConfig, telemetry);
+    const llm = metered(createLlmClient(llmConfig, telemetry), { byo: conn.byo });
 
     // In API context, disable interactive prompts (no TTY available). Plan mode auto-approves
     // and the plan is returned in the response. Iteration-limit hits stop and report rather
@@ -460,7 +518,7 @@ export function createRouter(): Router {
     };
     if (planMode) opts.planMode = planMode;
     if (fullContextToken) opts.fullContextToken = true;
-    if (maxIterations) opts.maxIterations = maxIterations;
+    if (maxIterations) opts.maxIterations = Math.min(Math.max(1, Math.floor(Number(maxIterations)) || 1), 200); // client-supplied: capped so one request cannot run unbounded
     if (isolatedWorkspace) opts.isolatedWorkspace = true;
     if (continueOnLimit) opts.continueOnLimit = true;
     // Map API's phasePlanning (true = enable) to orchestrator's singlePhase (false = enable)
@@ -608,21 +666,22 @@ export function createRouter(): Router {
       res.status(404).json({ success: false, error: projectError } as ApiResponse);
       return;
     }
-    const { model: overrideModel, error: modelError } = await resolveModelOverride(model);
+    const conn = await connectionFor(req, res, purposeForEngine(engine));
+    if (!conn) return;
+    const { model: overrideModel, error: modelError } = await resolveModelOverride(model, conn.byo);
     if (modelError) {
       res.status(400).json({ success: false, error: modelError } as ApiResponse);
       return;
     }
 
     const telemetry = createTelemetry(cwd);
-    const llmConfig = loadLlmConfig();
-    applyStoredApiKey(llmConfig);
+    const llmConfig = conn.config;
     if (overrideModel) llmConfig.model = overrideModel;
-    const llm = createLlmClient(llmConfig, telemetry);
+    const llm = metered(createLlmClient(llmConfig, telemetry), { byo: conn.byo });
 
     const opts: OrchestratorOptions = { cwd, planMode: planMode ?? "always" };
     if (fullContextToken) opts.fullContextToken = true;
-    if (maxIterations) opts.maxIterations = maxIterations;
+    if (maxIterations) opts.maxIterations = Math.min(Math.max(1, Math.floor(Number(maxIterations)) || 1), 200); // client-supplied: capped so one request cannot run unbounded
     if (isolatedWorkspace) opts.isolatedWorkspace = true;
     // Map API's phasePlanning (true = enable) to orchestrator's singlePhase (false = enable)
     if (phasePlanning === false) opts.singlePhase = true;
@@ -695,11 +754,12 @@ export function createRouter(): Router {
       return;
     }
     const telemetry = createTelemetry(cwd);
-    const llmConfig = loadLlmConfig();
-    applyStoredApiKey(llmConfig);
+    const conn = await connectionFor(req, res, "task");
+    if (!conn) return;
+    const llmConfig = conn.config;
     // Whatever model the plan was drafted with is what executes it — see PlanSession.model.
     if (session.model) llmConfig.model = session.model;
-    const llm = createLlmClient(llmConfig, telemetry);
+    const llm = metered(createLlmClient(llmConfig, telemetry), { byo: conn.byo });
 
     const opts: OrchestratorOptions = {
       cwd,
@@ -715,7 +775,7 @@ export function createRouter(): Router {
       },
     };
     if (session.fullContextToken) opts.fullContextToken = true;
-    if (session.maxIterations) opts.maxIterations = session.maxIterations;
+    if (session.maxIterations) opts.maxIterations = Math.min(Math.max(1, Math.floor(Number(session.maxIterations)) || 1), 200);
     if (session.isolatedWorkspace) opts.isolatedWorkspace = true;
     if (session.continueOnLimit) opts.continueOnLimit = true;
     // Map API's phasePlanning (true = enable) to orchestrator's singlePhase (false = enable)
@@ -895,6 +955,17 @@ export function createRouter(): Router {
     recordAudit(req, "codegraph.disconnect", "disconnected CodeGraph integration");
     const body: ApiResponse<{ connected: false; status: typeof status }> = { success: true, data: { connected: false, status } };
     res.json(body);
+  });
+
+  // ─── LLM response cache (admin only) ──────────────────────────────────────────────────
+  // Stats and a flush for the Redis-backed exact-match cache that sits in front of chat and task LLM calls.
+  router.get("/platform/cache", requireAdmin, async (_req: Request, res: Response) => {
+    res.json({ success: true, data: await getCacheStats() } as ApiResponse<Awaited<ReturnType<typeof getCacheStats>>>);
+  });
+  router.delete("/platform/cache", requireAdmin, async (req: Request, res: Response) => {
+    const removed = await clearCache();
+    recordAudit(req, "cache.clear", "cleared the LLM response cache", { removed });
+    res.json({ success: true, data: { removed } } as ApiResponse<{ removed: number }>);
   });
 
   // ─── CodeGraph: bundled instance lifecycle ──────────────────────────────────────────
@@ -1080,7 +1151,9 @@ export function createRouter(): Router {
   // this endpoint is purely so the UI can also show it, e.g. a "recent tasks" list) ───────
   router.get("/task-history", (req: Request, res: Response) => {
     const { userId, isAdmin } = authedUser(req);
-    const { cwd } = resolveProjectCwd(userId, isAdmin, req.query.projectId as string | undefined);
+    const { cwd, error: projectError } = resolveProjectCwd(userId, isAdmin, req.query.projectId as string | undefined);
+    // SaaS bug fix: an unknown/foreign projectId used to fall through to the server's own cwd.
+    if (projectError) { res.status(404).json({ success: false, error: projectError } as ApiResponse); return; }
     const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 10;
     const tasks = readTaskHistory(cwd, limit);
     const body: ApiResponse = { success: true, data: { tasks } };
@@ -1109,7 +1182,8 @@ export function createRouter(): Router {
     }
 
     const { userId, isAdmin } = authedUser(req);
-    const { cwd } = resolveProjectCwd(userId, isAdmin, req.body.projectId as string | undefined);
+    const { cwd, error: projectError } = resolveProjectCwd(userId, isAdmin, req.body.projectId as string | undefined);
+    if (projectError) { res.status(404).json({ success: false, error: projectError } as ApiResponse); return; }
 
     // Write to the markdown file
     const { appendTaskHistory } = await import("../core/taskHistory.js");
@@ -1526,7 +1600,14 @@ export function createRouter(): Router {
   let nextUserId = nextUserIdAfter(storedUsers);
 
   // Initialize the auth module's reference to our user store
+  if (migrateUsersForSaas(storedUsers)) persistUsers(storedUsers);
   setUserStore(storedUsers);
+
+  // Multi-tenant SaaS management (/saas/*) and tenant administration (/tenant/*), plus the CRM module (/crm/*).
+  // Inert unless XCODER_SAAS_MODE=true (the saas routes 404), and each is behind its feature switch via tenantGate.
+  registerSaasRoutes(router, { users: () => storedUsers, persist: () => persistUsers(storedUsers), newId: () => String(nextUserId++) });
+  registerCrmRoutes(router);
+  registerLlmRoutes(router, { checkTaskRateLimit });
 
   // ─── Register (no auth required — only works when no users exist) ──────
   router.post("/register", (req: Request, res: Response) => {
@@ -1551,6 +1632,14 @@ export function createRouter(): Router {
       return;
     }
 
+    {
+      const rl = checkRateLimit(`register:${req.ip}`);
+      if (rl.limited) {
+        res.status(429).json({ success: false, error: `Too many attempts. Try again in ${Math.ceil((rl.retryAfterMs ?? 0) / 1000)}s.` } satisfies ApiResponse);
+        return;
+      }
+    }
+
     // Only allow registration when no users exist
     if (storedUsers.length > 0) {
       const body: ApiResponse = { success: false, error: "Registration is closed. Users can only be added by an admin." };
@@ -1563,7 +1652,9 @@ export function createRouter(): Router {
       id: String(nextUserId++),
       username: username.trim(),
       passwordHash: hashPassword(password),
-      role: "admin",
+      // SaaS: the bootstrap account is the SaaS owner and belongs to no tenant.
+      role: isSaasMode() ? "saas_owner" : "admin",
+      tenantId: isSaasMode() ? undefined : DEFAULT_TENANT_ID,
       createdAt: new Date().toISOString(),
       authProvider: "local",
     };
@@ -1572,7 +1663,7 @@ export function createRouter(): Router {
     persistUsers(storedUsers);
 
     // Auto-login after registration
-    const token = generateToken(newUser.id, newUser.username, newUser.role);
+    const token = generateToken(newUser.id, newUser.username, newUser.role, newUser.tenantId ?? DEFAULT_TENANT_ID);
     setProxyCookie(req, res, token);
     const data: LoginResponse = { token, userId: newUser.id, username: newUser.username, role: newUser.role };
     const body: ApiResponse<LoginResponse> = { success: true, data };
@@ -1622,6 +1713,12 @@ export function createRouter(): Router {
       // Backfill googleId the first time an admin-pre-created-by-email account signs in.
       if (!user.googleId) user.googleId = identity.googleId;
     } else {
+      // SaaS: a Google identity must be pre-linked by a tenant admin / the owner. Auto-creating "role: user" with no
+      // tenant would otherwise mint an orphan principal on a multi-tenant server.
+      if (isSaasMode() && storedUsers.length > 0) {
+        res.status(403).json({ success: false, error: "No account is linked to this Google address. Ask your tenant admin to add it." } as ApiResponse);
+        return;
+      }
       // Any username collision with a "local" account of the same handle is avoided by
       // deriving the username from the email's local part plus a short disambiguator.
       const base = identity.email.split("@")[0].replace(/[^a-zA-Z0-9_.-]/g, "") || "google-user";
@@ -1637,7 +1734,8 @@ export function createRouter(): Router {
         passwordHash: "",
         // The very first account on a fresh install becomes admin regardless of provider,
         // same bootstrap rule /register uses for local accounts.
-        role: storedUsers.length === 0 ? "admin" : "user",
+        role: storedUsers.length === 0 ? (isSaasMode() ? "saas_owner" : "admin") : "user",
+        tenantId: isSaasMode() ? undefined : DEFAULT_TENANT_ID,
         createdAt: new Date().toISOString(),
         authProvider: "google",
         googleId: identity.googleId,
@@ -1646,9 +1744,13 @@ export function createRouter(): Router {
       storedUsers.push(user);
     }
 
+    if (user.disabled) {
+      res.status(403).json({ success: false, error: "Account disabled" } as ApiResponse);
+      return;
+    }
     persistUsers(storedUsers);
 
-    const token = generateToken(user.id, user.username, user.role);
+    const token = generateToken(user.id, user.username, user.role, user.tenantId ?? DEFAULT_TENANT_ID);
     setProxyCookie(req, res, token);
     const data: LoginResponse = { token, userId: user.id, username: user.username, role: user.role };
     const body: ApiResponse<LoginResponse> = { success: true, data };
@@ -1792,6 +1894,7 @@ export function createRouter(): Router {
       user.role = updates.role === "admin" ? "admin" : "user";
     }
     persistUsers(storedUsers);
+    revokeTokensForUserId(user.id); // role/username changed: force re-login so the token's role can't go stale
     recordAudit(req, "user.update", `updated user '${user.username}' (id ${user.id}, now ${user.role})`, { userId: user.id, username: user.username, role: user.role });
 
     const body: ApiResponse<User> = {
@@ -1821,6 +1924,7 @@ export function createRouter(): Router {
 
     const deleted = storedUsers.splice(index, 1)[0];
     persistUsers(storedUsers);
+    revokeTokensForUserId(deleted.id); // a deleted user's live tokens used to keep working until expiry
     recordAudit(req, "user.delete", `deleted user '${deleted.username}' (id ${deleted.id})`, { userId: deleted.id, username: deleted.username, role: deleted.role });
     const body: ApiResponse<User> = {
       success: true,

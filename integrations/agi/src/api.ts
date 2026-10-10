@@ -9,12 +9,13 @@ import { Approvals, KillSwitch } from "./control";
 import { Memory } from "./memory";
 import { Sandbox } from "./sandbox";
 import { runSuites } from "../kernel/evals";
-import { PORT, LLM_MODE } from "./config";
+import { PORT } from "./config";
+import type { LlmClient } from "./llm";
 import { Scheduler } from "./scheduler";
 
 export interface ApiDeps {
   agi: Agi; evolver: Evolver; goal: GoalStore; approvals: Approvals; kill: KillSwitch;
-  scheduler: Scheduler; memory: Memory; sandbox: Sandbox; state: { release: string; probation: "n/a" | "pending" | "pass" | "fail"; busy: number };
+  llm: LlmClient; scheduler: Scheduler; memory: Memory; sandbox: Sandbox; state: { release: string; probation: "n/a" | "pending" | "pass" | "fail"; busy: number };
 }
 
 export function startApi(d: ApiDeps) {
@@ -42,9 +43,18 @@ export function startApi(d: ApiDeps) {
   });
 
   app.get("/status", async (_q, r) => r.json({
-    release: d.state.release, genome: d.agi.d.genome.version, probation: d.state.probation, llmMode: LLM_MODE,
+    release: d.state.release, genome: d.agi.d.genome.version, probation: d.state.probation, llmMode: d.llm.mode, llmFp: d.llm.fp, llmModels: d.llm.models,
     sandbox: await d.sandbox.healthy(), killed: d.kill.engaged(), busy: d.state.busy, skills: d.memory.skillCount(),
   }));
+
+  // Runtime LLM connection (xcoder gateway pushes the tenant's / platform's choice). Behind the same bearer token as
+  // everything else; the key is kept in memory only and never returned.
+  app.get("/llm", (_q, r) => r.json({ mode: d.llm.mode, fp: d.llm.fp, models: d.llm.models }));
+  app.put("/llm", (q, r) => {
+    if (d.state.busy) return r.status(409).json({ error: "agent busy; retry shortly" });
+    const err = d.llm.configure({ fp: String(q.body?.fp ?? ""), mode: q.body?.mode, baseUrl: q.body?.baseUrl, endpoint: q.body?.endpoint, apiKey: typeof q.body?.apiKey === "string" ? q.body.apiKey : undefined, models: q.body?.models });
+    err ? r.status(400).json({ error: err }) : r.json({ ok: true, mode: d.llm.mode, fp: d.llm.fp });
+  });
 
   app.post("/chat", async (q, r) => {
     if (d.kill.engaged()) return r.status(423).json({ error: "kill switch engaged" });

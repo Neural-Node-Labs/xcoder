@@ -1,3 +1,5 @@
+import { isSaasMode } from "../saas/roles.js";
+import { scrubEnv } from "../tools/runCommandTool.js";
 import { fork, ChildProcess } from "node:child_process";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -82,7 +84,8 @@ export class SubprocessManager {
     // ── I-fork ang child process ─────────────────────────────────────────────────
     const child: ChildProcess = fork(workerModulePath, [], {
       stdio: ["pipe", "pipe", "pipe", "ipc"],
-      env: { ...process.env, XCODER_SUBAGENT: "1" },
+      // Multi-tenant: the child gets only an allowlisted environment, not the platform's secrets. Its LLM key comes over IPC.
+      env: { ...(isSaasMode() ? scrubEnv(process.env) : process.env), XCODER_SUBAGENT: "1", ...(isSaasMode() ? { XCODER_SAAS_MODE: "true", ...(process.env.XCODER_HOME ? { XCODER_HOME: process.env.XCODER_HOME } : {}), ...(process.env.XCODER_MOCK_LLM ? { XCODER_MOCK_LLM: process.env.XCODER_MOCK_LLM } : {}) } : {}) },
     });
 
     // ── Estado (State) ─────────────────────────────────────────────────────────────

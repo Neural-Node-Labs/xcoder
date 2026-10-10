@@ -1,5 +1,6 @@
 import type { DatabaseClient } from "../db/types.js";
 import { createConnection } from "../db/connection.js";
+import { requireTenantId } from "../saas/guards.js";
 
 /**
  * Task status within a plan.
@@ -54,7 +55,8 @@ export class PlanStore {
           plan_content TEXT NOT NULL,
           status TEXT NOT NULL DEFAULT 'active',
           created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          tenant_id TEXT NOT NULL DEFAULT 'default'
         );
 
         CREATE TABLE IF NOT EXISTS plan_tasks (
@@ -64,7 +66,8 @@ export class PlanStore {
           status TEXT NOT NULL DEFAULT 'pending',
           task_order INTEGER NOT NULL DEFAULT 0,
           created_at TIMESTAMPTZ DEFAULT NOW(),
-          updated_at TIMESTAMPTZ DEFAULT NOW()
+          updated_at TIMESTAMPTZ DEFAULT NOW(),
+          tenant_id TEXT NOT NULL DEFAULT 'default'
         );
 
         CREATE INDEX IF NOT EXISTS idx_plan_tasks_plan_id ON plan_tasks(plan_id);
@@ -88,22 +91,23 @@ export class PlanStore {
     }
     const id = `plan_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
     const now = new Date().toISOString();
+    const tenant = requireTenantId();
 
     try {
       // Insert the plan
       await this.db.query(
-        `INSERT INTO plans (id, task_description, plan_content, status, created_at, updated_at)
-         VALUES ($1, $2, $3, 'active', $4, $5)`,
-        [id, taskDescription, planContent, now, now]
+        `INSERT INTO plans (id, task_description, plan_content, status, created_at, updated_at, tenant_id)
+         VALUES ($1, $2, $3, 'active', $4, $5, $6)`,
+        [id, taskDescription, planContent, now, now, tenant]
       );
 
       // Insert each task
       for (let i = 0; i < tasks.length; i++) {
         const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 8)}_${i}`;
         await this.db.query(
-          `INSERT INTO plan_tasks (id, plan_id, description, status, task_order, created_at, updated_at)
-           VALUES ($1, $2, $3, 'pending', $4, $5, $6)`,
-          [taskId, id, tasks[i], i, now, now]
+          `INSERT INTO plan_tasks (id, plan_id, description, status, task_order, created_at, updated_at, tenant_id)
+           VALUES ($1, $2, $3, 'pending', $4, $5, $6, $7)`,
+          [taskId, id, tasks[i], i, now, now, tenant]
         );
       }
 
@@ -127,8 +131,8 @@ export class PlanStore {
       const planResult = await this.db.query<Plan>(
         `SELECT id, task_description as "taskDescription", plan_content as "planContent",
                 status, created_at as "createdAt", updated_at as "updatedAt"
-         FROM plans WHERE id = $1`,
-        [id]
+         FROM plans WHERE id = $1 AND tenant_id = $2`,
+        [id, requireTenantId()]
       );
 
       if (planResult.rows.length === 0) return { plan: null, tasks: [] };
@@ -136,8 +140,8 @@ export class PlanStore {
       const tasksResult = await this.db.query<PlanTask>(
         `SELECT id, plan_id as "planId", description, status, task_order as "order",
                 created_at as "createdAt", updated_at as "updatedAt"
-         FROM plan_tasks WHERE plan_id = $1 ORDER BY task_order ASC`,
-        [id]
+         FROM plan_tasks WHERE plan_id = $1 AND tenant_id = $2 ORDER BY task_order ASC`,
+        [id, requireTenantId()]
       );
 
       return { plan: planResult.rows[0], tasks: tasksResult.rows };
@@ -160,8 +164,8 @@ export class PlanStore {
       const result = await this.db.query<Plan>(
         `SELECT id, task_description as "taskDescription", plan_content as "planContent",
                 status, created_at as "createdAt", updated_at as "updatedAt"
-         FROM plans ORDER BY created_at DESC LIMIT $1`,
-        [limit]
+         FROM plans WHERE tenant_id = $2 ORDER BY created_at DESC LIMIT $1`,
+        [limit, requireTenantId()]
       );
       return result.rows;
     } catch (err) {
@@ -178,8 +182,8 @@ export class PlanStore {
     try {
       const now = new Date().toISOString();
       const result = await this.db.query(
-        `UPDATE plan_tasks SET status = $1, updated_at = $2 WHERE id = $3`,
-        [status, now, taskId]
+        `UPDATE plan_tasks SET status = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4`,
+        [status, now, taskId, requireTenantId()]
       );
       return (result.rowCount ?? 0) > 0;
     } catch (err) {
@@ -199,16 +203,17 @@ export class PlanStore {
 
       // Get the next order number
       const orderResult = await this.db.query<{ next_order: number }>(
-        `SELECT COALESCE(MAX(task_order), -1) + 1 as next_order FROM plan_tasks WHERE plan_id = $1`,
-        [planId]
+        `SELECT COALESCE(MAX(task_order), -1) + 1 as next_order FROM plan_tasks WHERE plan_id = $1 AND tenant_id = $2`,
+        [planId, requireTenantId()]
       );
       const nextOrder = orderResult.rows[0]?.next_order ?? 0;
 
-      await this.db.query(
-        `INSERT INTO plan_tasks (id, plan_id, description, status, task_order, created_at, updated_at)
-         VALUES ($1, $2, $3, 'pending', $4, $5, $6)`,
-        [id, planId, description, nextOrder, now, now]
+      const ins = await this.db.query(
+        `INSERT INTO plan_tasks (id, plan_id, description, status, task_order, created_at, updated_at, tenant_id)
+         SELECT $1, $2, $3, 'pending', $4, $5, $6, $7 WHERE EXISTS (SELECT 1 FROM plans WHERE id = $2 AND tenant_id = $7)`,
+        [id, planId, description, nextOrder, now, now, requireTenantId()]
       );
+      if ((ins.rowCount ?? 0) === 0) return null; // plan does not exist in this tenant
 
       return {
         id,
@@ -231,7 +236,7 @@ export class PlanStore {
   async deleteTask(taskId: string): Promise<boolean> {
     await this.init();
     try {
-      const result = await this.db.query("DELETE FROM plan_tasks WHERE id = $1", [taskId]);
+      const result = await this.db.query("DELETE FROM plan_tasks WHERE id = $1 AND tenant_id = $2", [taskId, requireTenantId()]);
       return (result.rowCount ?? 0) > 0;
     } catch (err) {
       console.warn("[PlanStore] Failed to delete task:", err instanceof Error ? err.message : String(err));
@@ -247,8 +252,8 @@ export class PlanStore {
     try {
       const now = new Date().toISOString();
       const result = await this.db.query(
-        `UPDATE plans SET status = $1, updated_at = $2 WHERE id = $3`,
-        [status, now, planId]
+        `UPDATE plans SET status = $1, updated_at = $2 WHERE id = $3 AND tenant_id = $4`,
+        [status, now, planId, requireTenantId()]
       );
       return (result.rowCount ?? 0) > 0;
     } catch (err) {

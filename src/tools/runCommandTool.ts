@@ -1,3 +1,4 @@
+import { isSaasMode } from "../saas/roles.js";
 import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 
@@ -88,7 +89,9 @@ export function runCommand(command: string, cwd: string = process.cwd(), timeout
     // build/install commands run against the target workspace. Left as-is,
     // `npm install`/`npm ci` in child commands would silently skip
     // devDependencies for any project xcoder is asked to work on.
-    const { NODE_ENV, ...childEnv } = process.env;
+    const { NODE_ENV, ...fullEnv } = process.env;
+    // Multi-tenant: a tenant's command must not inherit the platform's secrets (LLM keys, DB URL, AGI tokens...).
+    const childEnv = isSaasMode() ? scrubEnv(fullEnv) : fullEnv;
 
     const plan = resolveShellPlan();
     const child =
@@ -120,3 +123,9 @@ export function runCommand(command: string, cwd: string = process.cwd(), timeout
 }
 
 
+
+const ENV_ALLOW = new Set(["PATH", "HOME", "LANG", "LC_ALL", "TERM", "TZ", "TMPDIR", "SHELL", "USER", "LOGNAME", "PWD", "SystemRoot", "ComSpec", "PATHEXT", "WINDIR"]);
+/** Allowlist, not a denylist: only known-harmless variables reach a tenant's subprocess. */
+export function scrubEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(env).filter(([k]) => ENV_ALLOW.has(k)));
+}

@@ -1,5 +1,9 @@
 import { useState, useEffect } from "react";
 import { SafeHologram } from "../components/holograms/SafeHologram";
+import { LlmConnectionsPanel } from "../components/LlmConnectionsPanel";
+import { useAuth } from "../context/AuthContext";
+import type { LlmOverview, LlmSlot } from "../api/client";
+import { CacheCard } from "../components/CacheCard";
 import { api, HealthResponse, EnginesResponse, LlmConfigSummary, LlmProviderDefault } from "../api/client";
 import { THEMES, applyTheme, getStoredTheme } from "../theme";
 import type { JarvisMood } from "../components/holograms/types";
@@ -9,6 +13,12 @@ import { DEFAULT_ASSISTANT_NAME, getAssistantName, setAssistantName } from "../a
 const JARVIS_MOODS: JarvisMood[] = ["ready", "happy", "sad", "alert", "attack", "danger"];
 
 export function SettingsPage() {
+  const { saasMode, role } = useAuth();
+  const showPlatform = !saasMode || role === "saas_owner";
+  const [conns, setConns] = useState<LlmOverview | null>(null);
+  const loadConns = () => { api.llmOverview().then(setConns).catch(() => setConns(null)); };
+  useEffect(loadConns, []);
+  const slots: LlmSlot[] = ["default", "chat", "task", ...((!conns?.saasMode || conns.effective.agi?.available) ? ["agi" as const] : [])];
   const [hasKey, setHasKey] = useState<boolean | null>(null);
   const [keyInput, setKeyInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -31,9 +41,10 @@ export function SettingsPage() {
   const [llmError, setLlmError] = useState<string | null>(null);
 
   useEffect(() => {
-    api.llmKeyStatus().then((r) => setHasKey(r.hasKey)).catch(() => setHasKey(false));
     api.health().then(setHealth).catch(() => {});
     api.engines().then(setEngines).catch(() => {});
+    if (!showPlatform) return;
+    api.llmKeyStatus().then((r) => setHasKey(r.hasKey)).catch(() => setHasKey(false));
     api.llmConfig().then((c) => { setLlmConfig(c); setForm(c); }).catch(() => {});
     api.llmProviders().then((r) => { setProviders(r.providers); setProviderDefaults(r.defaults); setDefaultProvider(r.default); }).catch(() => {});
   }, []);
@@ -93,6 +104,7 @@ export function SettingsPage() {
 
   return (
     <div className="grid grid-2" style={{ alignItems: "start" }}>
+      {showPlatform && (<>
       <div className="card">
         <div className="card-title">LLM provider</div>
         <p className="text-2" style={{ marginTop: 0, marginBottom: 16, fontSize: 12 }}>
@@ -208,6 +220,22 @@ export function SettingsPage() {
           </button>
         </form>
       </div>
+      </>)}
+
+      {conns && (
+        <div style={{ gridColumn: "1 / -1" }}>
+          <LlmConnectionsPanel
+            connections={conns.connections}
+            effective={conns.effective}
+            providers={conns.providers}
+            slots={slots}
+            allowedProviders={conns.policy.allowedProviders ?? []}
+            readOnly={conns.policy.tenantMayConfigure === false}
+            allowPlatformMode={conns.saasMode ? conns.policy.platformFallback !== false : false}
+            api={{ save: api.llmSave, remove: api.llmRemove, test: api.llmTest, reload: loadConns }}
+          />
+        </div>
+      )}
 
       <div className="card" style={{ gridColumn: "1 / -1" }}>
         <div className="card-title">Assistant name</div>
@@ -360,6 +388,8 @@ export function SettingsPage() {
           </div>
         </div>
       </div>
+
+      <CacheCard />
 
       <div className="card" style={{ gridColumn: "1 / -1" }}>
         <div className="card-title">Platform status</div>

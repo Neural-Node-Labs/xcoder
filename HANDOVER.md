@@ -5,8 +5,8 @@ delivered alongside this file is the full, verified, up-to-date project.
 
 ## Verified state (as of this handover)
 
-- Backend: `npm run typecheck` clean, `npm test` → **699/699 passing** (48 test files).
-- UI: `npm run typecheck` clean (in `ui/`), `npm test` → **28/28 passing**, `npm run build` clean.
+- Backend: `npm run typecheck` clean, `npx vitest run` → **966/966 passing** (62 test files; as of the security validation pass, 2026-10-10).
+- UI: `npm run typecheck` clean (in `ui/`), `npm test` → **60/60 passing** (8 files), `npm run build` clean.
 - nginx config (`ui/nginx.conf`) syntax-validated with a real `nginx -t`.
 - No `node_modules`/`dist`/`.env` in the zip (gitignored build artifacts — rebuild with `npm
   install && npm run build`, or see `STANDALONE.md` / `scripts/build-standalone.sh`).
@@ -175,5 +175,24 @@ triaged the way the root one was (only adm-zip was pulled out and fixed there).
 
 1. **SDLC engine hardening + OpenTelemetry** — see `SECURITY_REVIEW.md` ("SDLC engine hardening…"). New: `src/telemetry/{otel,redact,index}.ts`, `src/core/engine/SdlcEngine.ts` (rewritten, API preserved; new stages `ui_ux`, `fix_deployment`; `classifyIntake` now routes defects/failed tests to `fix_defect`), `src/test/{sdlcScenarios,runSdlcScenarios,otlpSmoke}.ts`, tests `SdlcEngineHardening` / `SdlcScenarios`. Scenarios use a **scripted** developer LLM (no API key available) with real tools, real shell gates, real OTel; they have not been run against a live model.
 2. **API intake** — `POST /chat` accepts validated `intake` (`hasCode/hasDefect/hasDesign/hasUiDesign/hasFailedTest/hasFailedDeployment/evidence`) and `resumeTaskId` for the sdlc engine (`parseSdlcInput` in routes.ts). **Not yet** wired for `/chat/plan` → `/chat/execute` sessions, the CLI, or the UI Task form (no UI fields to attach evidence yet) — natural next step.
-3. **AGI integration** — `integrations/agi/` (vendored, UI removed, token auth + startup guard), `src/api/agiProxy.ts`, `ui/src/components/agi/*`, `docker-compose.yml` (AGI services merged in and ON by default; the old `docker-compose.agi.yml` overlay is gone; `agi-init` generates secrets into the `agi_secrets` volume), nginx SSE location. Docs: `integrations/agi/XCODER_INTEGRATION.md`.
+3. **AGI integration** — `integrations/agi/` (vendored, UI removed, token auth + startup guard), `src/api/agiProxy.ts`, `ui/src/components/agi/*`, `docker-compose.yml` (AGI services merged in and ON by default; the old `docker-compose.agi.yml` overlay is gone; `secrets-init` generates secrets into the `shared_secrets` volume), nginx SSE location. Docs: `integrations/agi/XCODER_INTEGRATION.md`.
 4. **Not verified:** the Docker images were not built here (no daemon); the AGI tab was exercised against the real services via HTTP and rendered in a headless browser against stubbed API responses, not inside a full compose stack.
+
+## Addendum — Redis LLM response cache (chat + tasks)
+* `src/cache/` — `backends.ts` (Redis with per-command timeout + circuit breaker, in-memory LRU), `llmCache.ts` (`CachingLlmClient`, exact-match key = sha256 of canonical JSON of messages/tools/model/settings/scope), `index.ts` (env config, `withLlmCache`, stats, clear). Wired in `createLlmClient` (chat, tasks/SDLC, CLI) and `subagentWorker`. Mock LLM is never wrapped.
+* Never cached: thinking mode, temperature > `XCODER_CACHE_MAX_TEMPERATURE` (default 0), truncated/filtered/empty answers, entries > 512 KB. Hits report zero token usage (`cacheHit: true`), so budgets and cost tracking see nothing spent. Fail-open everywhere: Redis down = normal model calls.
+* Config: `XCODER_CACHE` (auto|redis|memory|off; auto = Redis when `XCODER_REDIS_URL` set), `XCODER_REDIS_URL`, `XCODER_REDIS_PASSWORD[_FILE]`, `XCODER_CACHE_TTL_SECONDS`, `XCODER_CACHE_SCOPE`. Compose: `redis` service (password from `secrets-init`, LRU 256 MB, no persistence, no host port); `agi-init` was renamed `secrets-init` and the volume `agi_secrets` -> `shared_secrets`.
+* Admin API: `GET/DELETE /api/v1/platform/cache` (audited clear); Settings -> "LLM response cache" card; OTel counter `xcoder.cache.requests`.
+* Limits: counters are per process (sub-agent worker processes keep their own); the cache stores model output, which can contain code/secrets from prompts, so Redis must stay private (it is password-protected and unpublished in compose).
+
+## SaaS / multi-tenancy (added)
+- Code: `src/saas/*` (roles, features, tenantStore, gate, guards, usage/metering, crm/, routes), auth.ts carries `tenantId`; gate = `router.use(tenantGate)` after `authMiddleware` in routes.ts.
+- UI: `ui/src/access.ts` (nav only; server enforces), `CrmPage`, `SaasAdminPage`, `TenantPage`.
+- Tests: `src/saas/__tests__/saas.isolation.test.ts`, `ui/src/__tests__/access.test.tsx`.
+- Open items: see `SAAS_ISOLATION_AUDIT.md` (C7/C8 sandboxing, task-log tenant column, M2 sessions, M3 RLS).
+
+## LLM connections (centralised, per tenant)
+`src/llm/connections.ts` is the single resolver (chat/task/agi + default slot); routes in `src/llm/connectionRoutes.ts`; SSRF guard `netGuard.ts`; key sealing `secretBox.ts`. UI: `ui/src/components/LlmConnectionsPanel.tsx` (Settings) and `ui/src/pages/SaasLlm.tsx` (SaaS admin LLM tab + per-tenant AGI). AGI accepts runtime config via `PUT /llm`. Tests: `src/saas/__tests__/saas.llm.test.ts`. Known gaps: see the end of `SAAS_ISOLATION_AUDIT.md`.
+
+## Security validation pass (2026-10-10)
+Suite: `src/saas/__tests__/saas.security.test.ts` (token coverage over every route incl. SaaS/CRM/LLM, rate limits, SQL injection + static query scan, cross-tenant workspace/project/plan/CRM, traversal, prompt-injection controls, CodeGraph proxy). Fixes: three-bucket login limiter + `/register` limiter + `XCODER_TRUST_PROXY`; `/task-history` fell back to the server cwd for an unknown/foreign `projectId` (now 404); `projectRoutes.ts` admin override disabled in SaaS mode; untrusted-content rule added to the ReAct system prompt. Open: in-memory limiter/sessions (single replica), no tenant column on Postgres task_history/telemetry, no RLS, CLI still reads platform config directly, Docker images not built here. Full table: `SAAS_ISOLATION_AUDIT.md`.

@@ -123,6 +123,7 @@ async function executeSubagentTask(workerData: Record<string, unknown>): Promise
   const { ReActOrchestrator } = await import("../core/orchestrator.js");
   const { AutoIO } = await import("../core/io/AutoIO.js");
   const { DeepSeekClient } = await import("../llm/deepseekClient.js");
+  const { withLlmCache } = await import("../cache/index.js");
 
   // Muling buuin ang LLM config mula sa serialized na data. Ipinapasa lamang ang mga field na
   // talagang naroroon sa parent's config -- HINDI pinuprovide ang mga default na partikular sa
@@ -137,6 +138,8 @@ async function executeSubagentTask(workerData: Record<string, unknown>): Promise
         ...(llmConfig.endpoint ? { endpoint: String(llmConfig.endpoint) } : {}),
         model: String(llmConfig.model ?? "deepseek-v4-flash"),
         ...(llmConfig.api_key_env ? { api_key_env: String(llmConfig.api_key_env) } : {}),
+        // per-tenant key arrives over the IPC channel only (never argv/env)
+        ...(llmConfig.api_key ? { api_key: String(llmConfig.api_key) } : {}),
         max_tokens: Number(llmConfig.max_tokens ?? 16384),
         temperature: Number(llmConfig.temperature ?? 0.0),
         thinking: Boolean(llmConfig.thinking ?? false),
@@ -155,7 +158,7 @@ async function executeSubagentTask(workerData: Record<string, unknown>): Promise
   // Gumawa ng telemetry
   const telemetry = createNoopTelemetry();
 
-  const llm = new DeepSeekClient(config, telemetry);
+  const llm = withLlmCache(new DeepSeekClient(config, telemetry), config);
 
   const sub = new ReActOrchestrator(llm, telemetry, {
     cwd,

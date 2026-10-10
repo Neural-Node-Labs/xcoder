@@ -122,6 +122,13 @@ export async function initializeDatabase(
   `);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_projects_active ON projects(active)`);
 
+  // ─── Tenant scoping (multi-tenant SaaS) ───────────────────────────────
+  // Existing rows belong to the implicit single tenant "default". Every read/write in the stores filters on this column.
+  for (const t of ["plans", "plan_tasks", "phase_reports", "wbs_entries"]) {
+    await db.query(`ALTER TABLE ${t} ADD COLUMN IF NOT EXISTS tenant_id TEXT NOT NULL DEFAULT 'default'`);
+    await db.query(`CREATE INDEX IF NOT EXISTS idx_${t}_tenant ON ${t}(tenant_id)`);
+  }
+
   console.log("[Database] All tables initialized.");
 
   // ─── Run Migrations ───────────────────────────────────────────────────

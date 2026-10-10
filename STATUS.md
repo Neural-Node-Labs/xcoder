@@ -1,5 +1,7 @@
 # xcoder — Session Status Report
 
+> **Latest (2026-10-10):** multi-tenant SaaS (roles, tenants, plans/quotas, CRM, feature switches), centralised per-tenant LLM connections (chat / task / AGI, UI + API), and a security validation pass are done. Backend **966/966** tests, UI **60/60**, all typechecks and the UI build clean. See `SAAS_ISOLATION_AUDIT.md` (findings, fixes, residual risk), `docs/SAAS.md`, and the "SaaS" and "Security validation" sections of `HANDOVER.md`. The numbers in the older sections below are historical.
+
 **Build status as of this zip:** backend typecheck clean, frontend typecheck + build clean,
 **680/680 tests passing** (643 prior + 24 new backend tests for route auth coverage and Ollama
 model discovery + 13 new frontend tests for speech text sanitisation, covered by the root vitest

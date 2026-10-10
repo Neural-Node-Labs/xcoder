@@ -1,5 +1,6 @@
 import type { DatabaseClient } from "../db/types.js";
 import { createConnection } from "../db/connection.js";
+import { requireTenantId } from "../saas/guards.js";
 
 /**
  * A phase report stored in the database.
@@ -41,7 +42,8 @@ export class PhaseReportStore {
           content TEXT NOT NULL,
           tokens INTEGER DEFAULT 0,
           iterations INTEGER DEFAULT 0,
-          created_at TIMESTAMPTZ DEFAULT NOW()
+          created_at TIMESTAMPTZ DEFAULT NOW(),
+          tenant_id TEXT NOT NULL DEFAULT 'default'
         );
 
         CREATE INDEX IF NOT EXISTS idx_phase_reports_task_id ON phase_reports(task_id);
@@ -61,13 +63,13 @@ export class PhaseReportStore {
       const now = new Date().toISOString();
 
       await this.db.query(
-        `INSERT INTO phase_reports (id, task_id, phase_number, phase_title, content, tokens, iterations, created_at)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+        `INSERT INTO phase_reports (id, task_id, phase_number, phase_title, content, tokens, iterations, created_at, tenant_id)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
          ON CONFLICT (id) DO UPDATE SET
            content = EXCLUDED.content,
            tokens = EXCLUDED.tokens,
            iterations = EXCLUDED.iterations`,
-        [id, report.taskId, report.phaseNumber, report.phaseTitle, report.content, report.tokens, report.iterations, now]
+        [id, report.taskId, report.phaseNumber, report.phaseTitle, report.content, report.tokens, report.iterations, now, requireTenantId()]
       );
 
       return { id, ...report, createdAt: now };
@@ -86,8 +88,8 @@ export class PhaseReportStore {
       const result = await this.db.query<PhaseReport>(
         `SELECT id, task_id as "taskId", phase_number as "phaseNumber", phase_title as "phaseTitle",
                 content, tokens, iterations, created_at as "createdAt"
-         FROM phase_reports WHERE id = $1`,
-        [id]
+         FROM phase_reports WHERE id = $1 AND tenant_id = $2`,
+        [id, requireTenantId()]
       );
       return result.rows[0] ?? null;
     } catch (err) {
@@ -105,8 +107,8 @@ export class PhaseReportStore {
       const result = await this.db.query<PhaseReport>(
         `SELECT id, task_id as "taskId", phase_number as "phaseNumber", phase_title as "phaseTitle",
                 content, tokens, iterations, created_at as "createdAt"
-         FROM phase_reports WHERE task_id = $1 ORDER BY phase_number ASC`,
-        [taskId]
+         FROM phase_reports WHERE task_id = $1 AND tenant_id = $2 ORDER BY phase_number ASC`,
+        [taskId, requireTenantId()]
       );
       return result.rows;
     } catch (err) {

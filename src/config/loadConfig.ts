@@ -30,6 +30,8 @@ export interface LlmConfig {
   endpoint?: string; // required para sa openai-compatible providers (deepseek, atbp); hindi ginagamit ng anthropic
   model: string;
   api_key_env?: string; // opsyonal para sa mga provider sa NO_AUTH_PROVIDERS (hal. ollama); required sa iba
+  /** Runtime-only secret passed explicitly by the connection resolver (per-tenant keys). Wins over `api_key_env`. NEVER read from or written to llm.yaml, logged, cached or put in a cache key. */
+  api_key?: string;
   max_tokens: number;
   temperature: number;
   thinking?: boolean;

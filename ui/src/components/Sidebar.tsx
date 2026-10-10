@@ -1,7 +1,8 @@
 import { useAuth } from "../context/AuthContext";
 import { XcoderLogo } from "./XcoderLogo";
+import { canSee } from "../access";
 
-export type Page = "dashboard" | "wbs" | "history" | "skills" | "projects" | "workspace" | "tools" | "codegraph" | "secops" | "logs" | "users" | "auditlog" | "settings";
+export type Page = "dashboard" | "wbs" | "history" | "skills" | "projects" | "workspace" | "tools" | "codegraph" | "secops" | "logs" | "users" | "auditlog" | "settings" | "crm" | "saas" | "tenant";
 
 const NAV: { section: string; items: { key: Page; label: string; icon: string; adminOnly?: boolean }[] }[] = [
   {
@@ -25,6 +26,14 @@ const NAV: { section: string; items: { key: Page; label: string; icon: string; a
     ],
   },
   {
+    section: "Business",
+    items: [
+      { key: "crm", label: "CRM", icon: "◐" },
+      { key: "tenant", label: "My organization", icon: "⌂" },
+      { key: "saas", label: "SaaS admin", icon: "☁" },
+    ],
+  },
+  {
     section: "Admin",
     items: [
       { key: "users", label: "Users", icon: "◍", adminOnly: true },
@@ -35,7 +44,7 @@ const NAV: { section: string; items: { key: Page; label: string; icon: string; a
 ];
 
 export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page) => void }) {
-  const { username, role, logout } = useAuth();
+  const { username, role, logout, saasMode, features, tenantName } = useAuth();
 
   return (
     <aside className="sidebar">
@@ -49,11 +58,11 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
         </div>
       </div>
 
-      {NAV.map((group) => (
+      {NAV.filter((g) => g.items.some((i) => canSee(i.key, { role, saasMode, features }))).map((group) => (
         <div className="nav-group" key={group.section}>
           <div className="nav-label">{group.section}</div>
           {group.items
-            .filter((item) => !item.adminOnly || role === "admin")
+            .filter((item) => canSee(item.key, { role, saasMode, features }))
             .map((item) => (
               <button
                 key={item.key}
@@ -71,7 +80,7 @@ export function Sidebar({ page, onNavigate }: { page: Page; onNavigate: (p: Page
         <div className="row-between" style={{ padding: "6px 10px" }}>
           <div>
             <div style={{ fontSize: 12, fontWeight: 600 }}>{username}</div>
-            <div style={{ fontSize: 10, color: "var(--text-2)", textTransform: "uppercase" }}>{role}</div>
+            <div style={{ fontSize: 10, color: "var(--text-2)", textTransform: "uppercase" }}>{role?.replace("_", " ")}{tenantName ? ` · ${tenantName}` : ""}</div>
           </div>
           <button className="btn btn-ghost btn-sm" onClick={logout} title="Sign out">
             ⏻

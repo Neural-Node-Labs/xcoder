@@ -31,6 +31,7 @@ This installs dependencies, compiles the backend (`src/` → `dist/`), builds th
 if you don't already have one — edit that before running for real (see `.env.example`'s
 comments: an LLM provider key or Ollama, `DATABASE_*` if you're using Postgres,
 `XCODER_TOKEN_TTL_MS` if you want a different session length than the 60-minute default, etc.).
+Running behind a reverse proxy? Set `XCODER_TRUST_PROXY=<hops>` so the login rate limiter sees real client IPs; leave it unset when the API is exposed directly. Multi-tenant mode: `XCODER_SAAS_MODE=true` and `XCODER_SECRET_KEY` (see `docs/SAAS.md`).
 
 Options:
 - `--with-codegraph-python` — also provisions CodeGraph's own Python venv, so CodeGraph can run

@@ -40,7 +40,7 @@ async function main() {
     },
   });
   if (GOAL_LOOP_MINUTES > 0) console.warn("[agent] GOAL_LOOP_MINUTES is ignored: use the Schedule controls (token-capped) instead");
-  startApi({ agi, evolver, goal: shared.goal, approvals: shared.approvals, kill: shared.kill, memory: shared.memory, sandbox: shared.sandbox, state, scheduler });
+  startApi({ agi, evolver, goal: shared.goal, approvals: shared.approvals, kill: shared.kill, memory: shared.memory, sandbox: shared.sandbox, state, scheduler, llm: shared.llm });
 
   // Probation: a freshly promoted release must pass the kernel's smoke evals before the supervisor marks it stable.
   if (state.probation === "pending") {

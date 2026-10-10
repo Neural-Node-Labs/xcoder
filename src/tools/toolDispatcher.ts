@@ -43,6 +43,8 @@ import { handler as writeFileToolHandler } from "./writeFileTool.js";
 import { handler as validateFileHandler } from "./validateFileTool.js";
 import { runCodegraphTool, CodegraphToolArgs } from "./codegraphTool.js";
 import { runMcpTool, McpToolArgs } from "./mcpTool.js";
+import { currentTenant } from "../saas/context.js";
+import { isSaasMode } from "../saas/roles.js";
 import { webSearch } from "./webSearchTool.js";
 import { runSecurityTool } from "./securityOpsTool.js";
 import { runSetMoodTool } from "./moodTool.js";
@@ -363,7 +365,35 @@ const NETWORK_FETCH_TOOLS = new Set([
   "security_ops_tool",
 ]);
 
+/** Which feature switch governs a tool (undefined = ungoverned, e.g. file read/write inside the workspace). */
+function featureForTool(name: string): string | undefined {
+  if (name === "mcp_tool") return "mcp_tools";
+  if (name === "codegraph_tool") return "codegraph";
+  if (name === "security_ops_tool") return "security_ops";
+  if (SHELL_AND_REMOTE_EXEC_TOOLS.has(name)) return "shell_tools";
+  if (NETWORK_FETCH_TOOLS.has(name)) return "network_tools";
+  return undefined;
+}
+
+/**
+ * SaaS / feature-switch policy. Checks the calling request's tenant context. In SaaS mode a call with NO tenant context
+ * (a forked sub-agent worker, a background job) is denied for every governed tool: fail closed rather than fall back to
+ * platform-wide permissions.
+ */
+function tenantToolDenial(name: string): string | undefined {
+  const feature = featureForTool(name);
+  if (!feature) return undefined;
+  const ctx = currentTenant();
+  if (!ctx) {
+    return isSaasMode() ? `${name} is unavailable outside a tenant-scoped request (multi-tenant mode).` : undefined;
+  }
+  if (!ctx.features.has(feature)) return `${name} is disabled for this tenant (feature '${feature}' is off).`;
+  return undefined;
+}
+
 function disabledToolReason(name: string): string | undefined {
+  const denied = tenantToolDenial(name);
+  if (denied) return denied;
   if (SHELL_AND_REMOTE_EXEC_TOOLS.has(name) && /^(1|true)$/i.test(process.env.XCODER_DISABLE_SHELL_TOOLS ?? "")) {
     return `${name} is disabled on this server (XCODER_DISABLE_SHELL_TOOLS is set) — shell/remote-execution tools are unavailable until per-tenant sandboxing is configured.`;
   }

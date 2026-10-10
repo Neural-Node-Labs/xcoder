@@ -10,6 +10,7 @@ import {
 } from "../config/loadConfig.js";
 import { TelemetryInterface } from "../core/types.js";
 import { AutoMockLlmClient } from "./mockClient.js";
+import { withLlmCache } from "../cache/index.js";
 
 /**
  * Pinanatili ang pangalan ng klase bilang DeepSeekClient para sa backward compatibility sa mga
@@ -32,7 +33,7 @@ export class DeepSeekClient implements LlmClient {
   ): Promise<LlmResponse> {
     const resolved = resolveModelForSkill(this.config, this.skillName);
     const model = opts?.model ?? resolved.model;
-    const apiKey = this.config.api_key_env ? process.env[this.config.api_key_env] : undefined;
+    const apiKey = this.config.api_key || (this.config.api_key_env ? process.env[this.config.api_key_env] : undefined);
     const noAuthOk = providerRequiresNoAuth(this.config.provider);
 
     // Para sa karamihan ng provider, required ang isang tunay na API key -- kung wala ito,
@@ -236,7 +237,7 @@ export class DeepSeekClient implements LlmClient {
     await this.telemetry?.logError(new Error(`Falling back: ${reason}`), "DeepSeekClient.fallback");
 
     const { provider, model, api_key_env } = this.config.fallback;
-    const apiKey = api_key_env ? process.env[api_key_env] : undefined;
+    const apiKey = api_key_env ? process.env[api_key_env] : undefined; // the platform-configured fallback only; a tenant's own connection has none
     const noAuthOk = providerRequiresNoAuth(provider);
     if (!apiKey && !noAuthOk) {
       // Ipakita muna ang tunay na error (ang pangunahing dahilan ng kabiguan), pagkatapos
@@ -309,7 +310,7 @@ export function createLlmClient(
 ): LlmClient {
   const mock = opts?.mock ?? /^(1|true)$/i.test(process.env.XCODER_MOCK_LLM ?? "");
   if (mock) return new AutoMockLlmClient();
-  return new DeepSeekClient(config, telemetry, skillName);
+  return withLlmCache(new DeepSeekClient(config, telemetry, skillName), config, skillName);
 }
 
 /** Backward-compatible alias: nasa src/config/loadConfig.ts na ngayon ang tunay na registry

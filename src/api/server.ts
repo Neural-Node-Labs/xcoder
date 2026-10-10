@@ -7,6 +7,7 @@ import { createRouter } from "./routes.js";
 import { codegraphProxyMiddleware } from "./codegraphProxy.js";
 import { CODEGRAPH_UI_DIST, autoConnectFromEnv } from "./codegraphProcess.js";
 import { initOpenTelemetry } from "../telemetry/otel.js";
+import { closeCache } from "../cache/index.js";
 // Auth is always enabled — no more static admin credentials
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -52,6 +53,12 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
   }
 
   const app = express();
+
+  // Behind nginx/a load balancer req.ip is the proxy's address unless told otherwise, which
+  // would make every user share one login-limiter bucket. XCODER_TRUST_PROXY = number of
+  // proxy hops (docker-compose sets 1). Unset = trust none (a client cannot spoof its IP).
+  const trust = process.env.XCODER_TRUST_PROXY;
+  if (trust) app.set("trust proxy", /^\d+$/.test(trust) ? Number(trust) : trust);
 
   // Middleware
   //
@@ -197,6 +204,7 @@ export function startApiServer(opts: ApiServerOptions = {}): import("http").Serv
   });
 
   // Flush pending spans/metrics when the server closes.
+  server.on("close", () => { void closeCache().catch(() => {}); });
   server.on("close", () => { void otelShutdown.then((shutdown) => shutdown()).catch(() => {}); });
   return server;
 }

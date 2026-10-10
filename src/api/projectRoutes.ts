@@ -13,6 +13,7 @@ import {
 } from "./projectStore.js";
 import { EXCLUDED, WORKSPACE_DIR_NAME } from "../core/workspaceManager.js";
 import { ApiResponse } from "./types.js";
+import { isSaasMode } from "../saas/roles.js";
 
 
 const require = createRequire(import.meta.url);
@@ -28,7 +29,8 @@ function authedUser(req: Request): { userId: string; isAdmin: boolean } {
   // /register, and /users/count skip it, none of which are project routes) — the fallback
   // below exists purely so a missing-auth bug fails closed (empty userId matches nothing)
   // rather than throwing a 500.
-  return { userId: user?.userId ?? "", isAdmin: user?.role === "admin" };
+  // SaaS: no cross-owner override for anyone (defence in depth; mirrors routes.ts authedUser).
+  return { userId: user?.userId ?? "", isAdmin: !isSaasMode() && user?.role === "admin" };
 }
 
 /** Resolves the folder a project's file browser/download/delete operations act on: the

@@ -17,6 +17,11 @@ import { SecurityOpsPage } from "./pages/SecurityOpsPage";
 import { AuditLogPage } from "./pages/AuditLogPage";
 import { UsersPage } from "./pages/UsersPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { CrmPage } from "./pages/CrmPage";
+import { SaasAdminPage } from "./pages/SaasAdminPage";
+import { TenantPage } from "./pages/TenantPage";
+import { canSee, defaultPage } from "./access";
+import type { Role } from "./api/client";
 
 const TITLES: Record<Page, { title: string; sub: string }> = {
   dashboard: { title: "Run a task", sub: "Submit work to the SDLC orchestration pipeline, or chat directly with the Assistant engine" },
@@ -32,27 +37,28 @@ const TITLES: Record<Page, { title: string; sub: string }> = {
   users: { title: "Users", sub: "Manage platform accounts" },
   auditlog: { title: "Audit log", sub: "Who did what — every admin-only action, with a timestamp" },
   settings: { title: "Settings", sub: "LLM key and platform status" },
+  crm: { title: "CRM", sub: "Contacts, companies, deals and activities — private to your organization" },
+  saas: { title: "SaaS admin", sub: "Tenants, plans, usage, feature switches and staff" },
+  tenant: { title: "My organization", sub: "Users, feature switches, usage and audit trail for your tenant" },
 };
 
 const PAGE_STORAGE_KEY = "xcoder_page";
 
-const ADMIN_ONLY_PAGES: Page[] = ["users", "auditlog"];
-
-function readStoredPage(role: "admin" | "user" | null): Page {
+function readStoredPage(role: Role | null, saasMode: boolean, features?: string[]): Page {
   try {
     const saved = sessionStorage.getItem(PAGE_STORAGE_KEY);
     // Don't restore an admin-only page for a non-admin (e.g. a different account signed in on
     // this tab since) — the sidebar wouldn't even list it.
-    if (saved && saved in TITLES && (role === "admin" || !ADMIN_ONLY_PAGES.includes(saved as Page))) return saved as Page;
+    if (saved && saved in TITLES && canSee(saved as Page, { role, saasMode, features })) return saved as Page;
   } catch {
     // sessionStorage can be unavailable (privacy modes) — fall back to the default page.
   }
-  return "dashboard";
+  return defaultPage({ role, saasMode, features });
 }
 
 function Shell() {
-  const { role } = useAuth();
-  const [page, setPage] = useState<Page>(() => readStoredPage(role));
+  const { role, saasMode, features } = useAuth();
+  const [page, setPage] = useState<Page>(() => readStoredPage(role, saasMode, features));
   // Pages are mounted the first time they're visited and then kept mounted (hidden) so their
   // state survives navigation. Previously each page was rendered as `page === "x" && <X />`,
   // which unmounts it on navigation and throws away everything in it — the task you were
@@ -109,6 +115,9 @@ function Shell() {
           {keepAlive("users", <UsersPage />)}
           {keepAlive("auditlog", <AuditLogPage />)}
           {keepAlive("settings", <SettingsPage />)}
+          {keepAlive("crm", <CrmPage />)}
+          {keepAlive("saas", <SaasAdminPage />)}
+          {keepAlive("tenant", <TenantPage />)}
         </div>
       </div>
     </div>
